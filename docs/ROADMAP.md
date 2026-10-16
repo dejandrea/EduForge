@@ -6,9 +6,13 @@ Implementada: monorepo; API local; migrations SQLite; CRUD de projetos e aulas; 
 
 Validação funcional: cadastrar projeto e aulas, editar, excluir e reabrir banco sem perda de registros. Dados de teste ficam restritos a bancos temporários.
 
-## Fase 2 — Roteiro e geração pedagógica
+## Fase 2A — Roteiros, templates e versionamento pedagógico
 
-Próxima etapa, mediante solicitação: versões do roteiro, aprovação explícita, templates pedagógicos, histórico de conteúdo e integração de IA configurável. Definir estados, custos e tratamento de falhas antes da integração. Não iniciada nesta entrega.
+Implementada: versões de roteiro e sequência ordenada, dependências pedagógicas, aprovação explícita, comparação básica, vínculo com aulas existentes, templates com seções configuráveis, guias criados manualmente e histórico imutável de aprovações. Migration incremental preserva a Fase 1. Sem IA.
+
+## Fase 2B — Geração pedagógica com IA
+
+Não iniciada. Antes de implementar, definir o escopo em prompt próprio: provedores, credenciais, custos, contexto pedagógico, tarefas retomáveis e revisão humana. A geração deverá partir das referências versionadas da Fase 2A. Iniciar somente mediante solicitação.
 
 ## Fase 3 — Código e capturas
 

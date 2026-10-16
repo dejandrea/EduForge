@@ -1,1 +1,14 @@
-{"name":"@eduforge/api","version":"0.1.0","type":"module","scripts":{"dev":"node --watch --env-file-if-exists=../../.env src/server.js","start":"node --env-file-if-exists=../../.env src/server.js","test":"node --test"},"dependencies":{"@eduforge/shared":"*","express":"^5.1.0"}}
+{
+  "name": "@eduforge/api",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../../.env src/server.js",
+    "start": "node --env-file-if-exists=../../.env src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@eduforge/shared": "*",
+    "express": "^5.1.0"
+  }
+}

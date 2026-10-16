@@ -1,1 +1,9 @@
-{"name":"@eduforge/shared","version":"0.1.0","type":"module","exports":"./src/index.js","dependencies":{"zod":"^4.1.0"}}
+{
+  "name": "@eduforge/shared",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.js",
+  "dependencies": {
+    "zod": "^4.1.0"
+  }
+}

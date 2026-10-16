@@ -1,1 +1,26 @@
-{"name":"eduforge","private":true,"type":"module","workspaces":["apps/*","packages/*"],"engines":{"node":">=22.13.0"},"scripts":{"dev":"concurrently -k -n api,web \"npm run dev -w @eduforge/api\" \"npm run dev -w @eduforge/web\"","build":"npm run build -w @eduforge/web","test":"npm run test -w @eduforge/api","check":"npm test && npm run build"},"devDependencies":{"concurrently":"^9.2.1"}}
+{
+  "name": "eduforge",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run dev -w @eduforge/api\" \"npm run dev -w @eduforge/web\"",
+    "build": "npm run build -w @eduforge/web",
+    "test": "npm run test -w @eduforge/api && npm run test -w @eduforge/web",
+    "check": "npm test && npm run build",
+    "format:check": "prettier --check \"apps/**/*.{js,jsx,css,json}\" \"packages/**/*.{js,json}\" \"package.json\""
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "concurrently": "^9.2.1",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.10",
+    "vitest": "^5.0.5"
+  }
+}
