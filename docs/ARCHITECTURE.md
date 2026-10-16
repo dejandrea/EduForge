@@ -1,4 +1,4 @@
-# Arquitetura — Fases 1 e 2A
+# Arquitetura — Fases 1, 2A e 2B
 
 Monorepo npm em JavaScript ESM. Frontend React + Vite separado da persistência por uma API REST Express. React Router organiza dashboard, projetos, detalhes, aulas e formulários. CSS de layout e de páginas fica separado do JavaScript. Schemas Zod e rótulos de status são compartilhados em `packages/shared`.
 
@@ -82,3 +82,43 @@ Não existem endpoints para apagar versões. A comparação é feita na interfac
 ## Verificações da Fase 2A
 
 Testes HTTP/SQLite cobrem ciclo de estados, conflitos, imutabilidade, relações, vínculos, templates, guias e migração sobre banco da Fase 1. Testes Vitest/Testing Library usam DOM simulado e a API real com SQLite em memória para exercitar os formulários e sua persistência. Não substituem inspeção de layout e cliques em navegador real. Prettier mantém os arquivos de código legíveis e oferece `npm.cmd run format:check`.
+
+## Geração com IA — Fase 2B
+
+A migration `004_ai_generation.sql` acrescenta `ai_settings`, `ai_jobs`, `ai_attempts`, `ai_usage` e `ai_worker_lock`. As migrations 001–003 permanecem intactas. Preferências e preços são JSON validado, sem segredos. Cada job fotografa os parâmetros, contexto pedagógico, preços, data dos preços e câmbio; o histórico não muda quando a configuração é editada.
+
+`ai/providers.js` adapta OpenAI Responses e Gemini via AI SDK e provedores diretos, com `generateText`, `Output.object`, timeout/cancelamento e `maxRetries:0`. Nenhum modelo é fixado como opção única. A seleção precisa constar na configuração e no catálogo acessível da API; o suporte aos parâmetros/saída estruturada é validado na chamada. Modelos devem ser cadastrados conforme documentação vigente do provedor. Erros são normalizados sem persistir corpos, cabeçalhos ou mensagens brutas que possam conter chaves. Credenciais são lidas de `OPENAI_API_KEY` e `GEMINI_API_KEY`; não há endpoint para ler ou armazenar suas strings.
+
+`ai/context.js` valida roteiro e template vigentes aprovados, vínculo da aula e correspondência de número, título, objetivos e duração. Congela projeto, roteiro, item, seções ativas, guias aprovados de aulas anteriores na sequência e instruções adicionais. A ausência de histórico anterior é explícita. Contexto maior que 200 KB é rejeitado antes da chamada. Não há ferramentas de execução, acesso a repositórios ou publicação. Exemplos de código são propostas pendentes de validação.
+
+`ai/service.js` reserva orçamento e enfileira em transação. `request_key` único mais hash dos parâmetros impede solicitações duplicadas; chave reutilizada com outro corpo retorna 409. O HTTP retorna 202. O worker reivindica uma tarefa pendente e cria uma única tentativa em transação; não chama o provedor dentro da transação SQLite. Antes do envio revalida o planejamento e o catálogo. Após receber, valida estrutura, ordem e conteúdo obrigatório, reutiliza `guideSchema` e `insertGuideDraft` de `guides.js` e persiste guia, resultado da tarefa e consumo atomicamente. A mesma função de persistência atende criação manual da Fase 2A.
+
+Regeneração referencia guia e seção exatos, pede somente essa seção e combina o resultado com o snapshot do restante do conteúdo salvo. Sempre cria novo rascunho, inclusive quando a origem foi aprovada. A origem permanece imutável. `GET /guides/:id` expõe a proveniência por `ai_jobs.result_guide_id`; revisão, comparação e aprovação continuam usando as APIs existentes. O status de produção da aula é independente.
+
+`server.js` inicia `ai/worker.js` com `fork`, sem modo watch no processo filho. O worker usa uma conexão SQLite própria e trava com proprietário e heartbeat. Outro worker aguarda a trava; após 15 segundos sem heartbeat, pode assumir. O proprietário é conferido antes de reivindicar e concluir tarefas. Perder a trava cancela a execução daquele worker. Ao assumir, tarefas que ficaram `running` viram `failed/INTERRUPTED`, com reserva incerta; nunca voltam automaticamente à fila. Tarefas `pending` continuam normalmente. Desconexão do processo pai ou sinal interrompe chamadas ativas. Não há repetição automática de falhas ou chamadas pagas.
+
+Cancelamento de pendente libera reserva e não chama a API. Em execução, grava intenção e aborta a requisição; o resultado é descartado, mas consumo conhecido é registrado. Se não houver uso suficiente para calcular o custo, `cost_usd` fica NULL e a reserva permanece comprometida. A interface exibe **Custo não determinado**, não zero.
+
+Orçamento é em USD por mês UTC. Soma custos estimados conhecidos no mês e reservas pendentes/incertas, inclusive de meses anteriores. A reserva usa limite conservador de entrada baseado nos bytes do prompt/schema mais margem e o limite de tokens de saída, valorizados pelos preços configurados. Não é garantia de faturamento máximo externo: preços incorretos, regras do provedor e dados de uso incompletos exigem conferência. Cache sem preço específico é estimado ao preço normal de entrada. Conversão BRL só ocorre com taxa e data fotografadas na tarefa. Não há conciliação/liberação manual de reservas incertas na interface desta fase.
+
+### Endpoints de IA
+
+Todos usam prefixo `/api`, as mesmas restrições de loopback e o padrão de erros existente.
+
+| Método | Caminho | Operação |
+|---|---|---|
+| GET, PUT | /ai/settings | Preferências, modelos, preços e presença de credenciais |
+| POST | /ai/test-connection | Consulta explícita do catálogo e validação do ID configurado |
+| GET | /ai/usage | Orçamento e últimas 200 chamadas registradas |
+| GET | /ai/jobs | Últimas 100 tarefas |
+| GET | /ai/jobs/:id | Estado, progresso, tentativa, reserva e guia resultante |
+| POST | /ai/jobs/:id/cancel | Cancelamento idempotente |
+| GET, POST | /lessons/:id/ai-jobs | Histórico da aula e solicitação de geração/regeneração |
+
+POST recebe `request_key`, `provider`, `model`, `template_version_id`, `roadmap_version_id`, `instructions`; regeneração acrescenta `source_guide_id` e `section_id`. A resposta não retorna o snapshot interno do prompt ou parâmetros de autenticação. Uma nova solicitação paga exige nova chave.
+
+### Interface e verificação
+
+`Roadmaps.jsx` torna o cadastro acessível pelo menu sem recriar o editor. `AISettings.jsx` gerencia preferências e consumo. `AIGeneration.jsx` oferece seleção, enfileiramento, progresso por marcos e cancelamento. `Guides.jsx` reutiliza o editor estruturado e protege edições pendentes quando uma geração termina. Não há um segundo editor.
+
+Testes adicionais exercitam HTTP, SQLite, provedores falsos, adaptadores com fetch simulado, worker em processo separado e fluxo DOM → API → tarefa → guia. Nenhum teste automatizado depende de credenciais ou consome créditos reais.

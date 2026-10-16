@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import { validateGuide as validateStoredGuide, insertGuideDraft } from './guides.js';
 import {
   roadmapSchema,
   roadmapItemsSchema,
@@ -71,6 +72,10 @@ export function pedagogyRouter(db) {
         template: { title: template.data.title, version: template.version },
         roadmap: { title: roadmap.data.title, version: roadmap.version },
       };
+      row.generation =
+        db
+          .prepare('SELECT id,provider,model,type,created_at FROM ai_jobs WHERE result_guide_id=?')
+          .get(id) || null;
     }
     return row;
   }
@@ -80,32 +85,14 @@ export function pedagogyRouter(db) {
         'Edite somente rascunhos. Duplique uma versão aprovada ou devolva a revisão ao rascunho.',
       );
   }
-  function validateGuide(lessonId, data, forApproval = false) {
-    const lesson = get('lessons', lessonId);
-    const template = get('template_versions', data.template_version_id);
-    const roadmap = get('roadmap_versions', data.roadmap_version_id);
-    if (
-      !['approved', 'superseded'].includes(template.status) ||
-      !['approved', 'superseded'].includes(roadmap.status)
-    )
-      fail('O guia deve referenciar versões já aprovadas de template e roteiro.');
-    if (roadmap.project_id !== lesson.project_id)
-      fail('O roteiro deve pertencer ao mesmo projeto da aula.');
-    const sections = template.data.sections.filter((s) => s.enabled);
-    if (
-      JSON.stringify(sections.map((s) => s.id)) !==
-      JSON.stringify(data.content.map((s) => s.section_id))
-    )
-      fail('O conteúdo deve seguir as seções ativas e a ordem da versão do template.');
-    if (forApproval && sections.some((s, i) => !s.optional && !data.content[i].content.trim()))
-      fail('Preencha as seções obrigatórias antes de aprovar o guia.');
-  }
+  const validateGuide = (lessonId, data, forApproval = false) =>
+    validateStoredGuide(db, lessonId, data, forApproval);
   function insert(kind, parentId, data) {
     const config = configs[kind];
     const parent = get(config.parentTable, parentId);
     if (kind === 'template-versions' && parent.archived)
       fail('Restaure o template antes de criar versões.');
-    if (kind === 'guides') validateGuide(parentId, data);
+    if (kind === 'guides') return insertGuideDraft(db, parentId, data);
     const version = db
       .prepare(
         `SELECT coalesce(max(version),0)+1 AS n FROM ${config.table} WHERE ${config.parent}=?`,
@@ -113,23 +100,9 @@ export function pedagogyRouter(db) {
       .get(parentId).n;
     const id = randomUUID();
     const timestamp = now();
-    if (kind === 'guides')
-      db.prepare(
-        'INSERT INTO lesson_versions (id,lesson_id,version,template_version_id,roadmap_version_id,data,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
-      ).run(
-        id,
-        parentId,
-        version,
-        data.template_version_id,
-        data.roadmap_version_id,
-        JSON.stringify(data),
-        timestamp,
-        timestamp,
-      );
-    else
-      db.prepare(
-        `INSERT INTO ${config.table} (id,${config.parent},version,data,created_at,updated_at) VALUES (?,?,?,?,?,?)`,
-      ).run(id, parentId, version, JSON.stringify(data), timestamp, timestamp);
+    db.prepare(
+      `INSERT INTO ${config.table} (id,${config.parent},version,data,created_at,updated_at) VALUES (?,?,?,?,?,?)`,
+    ).run(id, parentId, version, JSON.stringify(data), timestamp, timestamp);
     return id;
   }
   function saveItems(id, input) {

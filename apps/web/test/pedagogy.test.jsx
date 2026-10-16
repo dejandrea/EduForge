@@ -14,18 +14,44 @@ import { createRequire } from 'node:module';
 import Roadmap from '../src/pages/Roadmap';
 import { TemplateDetail } from '../src/pages/Templates';
 import Guides from '../src/pages/Guides';
+import Roadmaps from '../src/pages/Roadmaps';
+import AISettings from '../src/pages/AISettings';
 
 // Load the server with Node so Vite does not bundle native SQLite for the DOM environment.
 const require = createRequire(import.meta.url);
 const { createApp } = require('../../api/src/app.js');
 const { openDatabase } = require('../../api/src/database.js');
+const { createAIService } = require('../../api/src/ai/service.js');
 configure({ asyncUtilTimeout: 5000 });
 
-let db, server, project, request;
+let db, server, project, request, aiService, providerCalls;
 const nativeFetch = globalThis.fetch;
 beforeEach(async () => {
   db = openDatabase(':memory:');
-  server = createApp(db).listen(0, '127.0.0.1');
+  providerCalls = { catalog: 0, generate: 0 };
+  const provider = {
+    hasCredential: () => true,
+    listModels: async () => {
+      providerCalls.catalog++;
+      return ['mock-education'];
+    },
+    generate: async ({ prompt }) => {
+      providerCalls.generate++;
+      const sections = JSON.parse(prompt.match(/SEÇÕES SOLICITADAS: (.*)\n/)[1]);
+      return {
+        output: {
+          content: sections.map((s) => ({
+            section_id: s.id,
+            content: 'Guia gerado para revisão.',
+          })),
+        },
+        usage: { input_tokens: 100, output_tokens: 100, cached_tokens: 0 },
+      };
+    },
+  };
+  const providers = { openai: provider, gemini: provider };
+  aiService = createAIService(db, { providers });
+  server = createApp(db, { ai: { providers } }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   vi.stubGlobal('fetch', (path, options) => nativeFetch(new URL(path, base), options));
@@ -209,4 +235,103 @@ test('vincular aula divergente mostra aviso sem sobrescrever a aula', async () =
   fireEvent.click(screen.getByRole('button', { name: 'Salvar vínculo' }));
   expect(await screen.findByText('Divergência em número, título, objetivos.')).toBeTruthy();
   expect(await request(`/lessons/${lesson.id}`)).toEqual(lesson);
+});
+
+test('entrada Roteiros permite acessar o cadastro no projeto', async () => {
+  render(
+    <MemoryRouter initialEntries={['/roadmaps']}>
+      <Routes>
+        <Route path="/roadmaps" element={<Roadmaps />} />
+        <Route path="/projects/:id/roadmap" element={<Roadmap />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  fireEvent.click(await screen.findByRole('link', { name: 'Cadastrar ou abrir roteiro →' }));
+  expect(await screen.findByRole('button', { name: 'Criar primeira versão' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Criar primeira versão' }));
+  expect(await screen.findByLabelText('Público-alvo')).toBeTruthy();
+});
+
+test('configurações salvam modelo e consultam conexão somente mediante ação explícita', async () => {
+  page('/settings/ai', '/settings/ai', <AISettings />);
+  fireEvent.click(await screen.findByRole('button', { name: '+ Cadastrar modelo' }));
+  fireEvent.change(screen.getByLabelText('ID do modelo'), { target: { value: 'mock-education' } });
+  fireEvent.change(screen.getByLabelText('Nome de exibição'), {
+    target: { value: 'Modelo de teste' },
+  });
+  fireEvent.change(screen.getByLabelText('Preço de entrada / milhão (USD)'), {
+    target: { value: '1' },
+  });
+  fireEvent.change(screen.getByLabelText('Preço de saída / milhão (USD)'), {
+    target: { value: '2' },
+  });
+  fireEvent.change(screen.getByLabelText('Data de atualização dos preços'), {
+    target: { value: '2026-10-01' },
+  });
+  fireEvent.change(screen.getByLabelText('Modelo padrão'), { target: { value: 'mock-education' } });
+  expect(providerCalls.catalog).toBe(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar configurações' }));
+  await screen.findByText('Configurações salvas.');
+  expect(aiService.settings().models[0].id).toBe('mock-education');
+  fireEvent.click(await screen.findByRole('button', { name: 'Testar conexão explicitamente' }));
+  await screen.findByText(/Credencial e acesso ao catálogo confirmados/);
+  expect(providerCalls.catalog).toBe(1);
+  expect(providerCalls.generate).toBe(0);
+  expect(screen.queryByLabelText('Chave da API')).toBe(null);
+});
+
+test('Gerar com IA enfileira sem cobrança no HTTP e exibe o rascunho no editor existente', async () => {
+  const roadmap = await approvedRoadmap();
+  const lesson = await request(`/projects/${project.id}/lessons`, {
+    number: 1,
+    title: 'Introdução',
+  });
+  await fetch(`/api/roadmap-items/${roadmap.items[0].id}/link`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lesson_id: lesson.id }),
+  });
+  aiService.saveSettings({
+    ...aiService.settings(),
+    model: 'mock-education',
+    models: [
+      {
+        provider: 'openai',
+        id: 'mock-education',
+        label: 'Modelo simulado',
+        structured_output: true,
+        max_output_tokens: 1000,
+        temperature: null,
+        input_per_million: 1,
+        output_per_million: 2,
+        cached_input_per_million: null,
+        price_date: '2026-10-01',
+      },
+    ],
+  });
+  const template = (await request('/templates'))[0];
+  const version = (await request(`/templates/${template.id}/versions`)).find(
+    (v) => v.status === 'approved',
+  );
+  page(`/lessons/${lesson.id}/guides`, '/lessons/:lessonId/guides', <Guides />);
+  fireEvent.click(await screen.findByText('Gerar guia com IA', { selector: 'summary' }));
+  await waitFor(() => expect(screen.getByLabelText('Template para IA').options.length).toBe(2));
+  fireEvent.change(screen.getByLabelText('Template para IA'), { target: { value: template.id } });
+  await waitFor(() =>
+    expect(screen.getByLabelText('Versão aprovada do template para IA').options.length).toBe(2),
+  );
+  fireEvent.change(screen.getByLabelText('Versão aprovada do template para IA'), {
+    target: { value: version.id },
+  });
+  fireEvent.change(screen.getByLabelText('Roteiro aprovado para IA'), {
+    target: { value: roadmap.id },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Gerar guia com IA' }));
+  await screen.findByText(/Tarefa solicitada/);
+  expect(providerCalls.generate).toBe(0);
+  await aiService.processNext();
+  const content = await screen.findByLabelText('Conteúdo: Cabeçalho', {}, { timeout: 7000 });
+  expect(content.value).toBe('Guia gerado para revisão.');
+  expect(await screen.findByText(/Gerado com openai/)).toBeTruthy();
+  expect(providerCalls.generate).toBe(1);
 });

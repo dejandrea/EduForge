@@ -13,6 +13,8 @@ import { statuses, reviewStatuses } from '@eduforge/shared';
 import Roadmap from './pages/Roadmap';
 import { Templates, TemplateDetail } from './pages/Templates';
 import Guides from './pages/Guides';
+import Roadmaps from './pages/Roadmaps';
+import AISettings from './pages/AISettings';
 import { api } from './api';
 import './components/Layout.css';
 import './pages/Workspace.css';
@@ -589,6 +591,12 @@ function App() {
             <NavLink to="/templates">
               ▧ <span>Templates</span>
             </NavLink>
+            <NavLink to="/roadmaps">
+              ☷ <span>Roteiros</span>
+            </NavLink>
+            <NavLink to="/settings/ai">
+              ⚙ <span>Configurações</span>
+            </NavLink>
           </nav>
           <div className="sidebar-footer">
             <span className="online" /> Ambiente local<small>Seu conhecimento ganha forma.</small>
@@ -599,7 +607,7 @@ function App() {
             <span>
               Workspace <span className="muted">/ EduForge</span>
             </span>
-            <span className="local-label">● Local · Fase 2A</span>
+            <span className="local-label">● Local · Fase 2B</span>
           </header>
           <main>
             <Routes>
@@ -612,6 +620,8 @@ function App() {
               <Route path="/projects/:id/lessons/:lessonId/edit" element={<LessonForm />} />
               <Route path="/lessons" element={<Lessons />} />
               <Route path="/projects/:id/roadmap" element={<Roadmap />} />
+              <Route path="/roadmaps" element={<Roadmaps />} />
+              <Route path="/settings/ai" element={<AISettings />} />
               <Route path="/templates" element={<Templates />} />
               <Route path="/templates/:templateId" element={<TemplateDetail />} />
               <Route path="/lessons/:lessonId/guides" element={<Guides />} />

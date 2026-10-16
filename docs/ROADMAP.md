@@ -12,7 +12,7 @@ Implementada: versões de roteiro e sequência ordenada, dependências pedagógi
 
 ## Fase 2B — Geração pedagógica com IA
 
-Não iniciada. Antes de implementar, definir o escopo em prompt próprio: provedores, credenciais, custos, contexto pedagógico, tarefas retomáveis e revisão humana. A geração deverá partir das referências versionadas da Fase 2A. Iniciar somente mediante solicitação.
+Implementada conforme `docs/prompts/Fase 2B.md`: acesso direto a Roteiros no menu; OpenAI/Gemini com modelos e preços configuráveis; credenciais somente no backend; geração estruturada e regeneração de uma seção; worker separado com tarefas persistidas, cancelamento e prevenção de repetição; orçamento, uso e custos estimados. Editor, histórico e aprovação reutilizam a Fase 2A. Testes usam provedores simulados, sem créditos reais. Validação com credenciais e avaliação pedagógica reais ficam para uso assistido da professora; ver `PHASE_2B_REPORT.md`.
 
 ## Fase 3 — Código e capturas
 

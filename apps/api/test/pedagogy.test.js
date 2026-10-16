@@ -415,7 +415,7 @@ test('guias manuais: referências, conteúdo estruturado, aprovação, históric
       .content[0].content,
     'Conteúdo manual de teste.',
   );
-  assert.equal(reopened.prepare('SELECT count(*) AS n FROM migrations').get().n, 3);
+  assert.equal(reopened.prepare('SELECT count(*) AS n FROM migrations').get().n, 4);
 });
 
 test('migrations pedagógicas sobre banco da Fase 1 preservam projetos, aulas e reaplicação', () => {

@@ -1,0 +1,55 @@
+.budget-summary {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+  color: #c1e7a6;
+}
+.ai-form {
+  margin: 20px 0;
+}
+.ai-form summary {
+  color: #b4ed79;
+  cursor: pointer;
+}
+.job-list {
+  display: grid;
+  gap: 14px;
+}
+.job-card {
+  padding: 18px;
+  background: #1a2432;
+  border: 1px solid #354357;
+  border-radius: 8px;
+}
+.job-card p {
+  font-size: 13px;
+  color: #aab8cb;
+  line-height: 1.7;
+}
+.job-card progress {
+  width: 100%;
+  accent-color: #b4ed79;
+}
+.ai-controls {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 18px 0;
+}
+.ai-controls .field {
+  min-width: 180px;
+  flex: 1;
+}
+.ai-form pre {
+  overflow: auto;
+}
+.ai-provenance {
+  padding: 12px;
+  border-left: 3px solid #b4ed79;
+  color: #b4c3d9;
+  font-size: 12px;
+}
+.ai-form .field {
+  margin-top: 16px;
+}

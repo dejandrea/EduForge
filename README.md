@@ -1,6 +1,6 @@
 # EduForge
 
-Da ideia à aula pronta. Aplicação local de gestão de projetos educacionais e aulas. Implementa a Fase 1 e a **Fase 2A: roteiros, templates e versionamento pedagógico**, sem integração de IA. Consulte o [PRD](docs/Documento%201%20%E2%80%94%20PRD%20do%20EduForge%20v0.1.md), o [prompt da Fase 1](docs/prompts/Fase%201.md) e o [prompt da Fase 2A](docs/prompts/Fase%202A.md).
+Da ideia à aula pronta. Aplicação local de gestão de projetos educacionais e aulas. Implementa as Fases 1, 2A e **2B: geração pedagógica com IA**, com revisão humana e histórico. Consulte o [PRD](docs/Documento%201%20%E2%80%94%20PRD%20do%20EduForge%20v0.1.md) e os prompts das [Fases 1](docs/prompts/Fase%201.md), [2A](docs/prompts/Fase%202A.md) e [2B](docs/prompts/Fase%202B.md).
 
 ## Iniciar no Windows
 
@@ -31,7 +31,7 @@ Status: planejada, em produção, em revisão e concluída. O indicador Em produ
 
 ## Roteiros, templates e guias manuais
 
-1. No projeto, abra **Roteiro pedagógico** e crie a primeira versão. Preencha público-alvo, faixa etária, objetivos, duração e metodologia.
+1. No menu **Roteiros**, escolha o projeto e clique em **Cadastrar ou abrir roteiro**. O mesmo acesso continua nos detalhes do projeto, em **Roteiro pedagógico**. Crie a primeira versão e preencha público-alvo, faixa etária, objetivos, duração e metodologia.
 2. Adicione aulas à sequência. Cada item possui objetivos, conceitos novos e revisados, atividades, resultado esperado, pré-requisitos e dependências. Use as setas para reordenar; números devem ser únicos e dependências apontam para aulas anteriores na sequência.
 3. Salve o roteiro e a sequência juntos. Envie para revisão e clique em **Aprovar versão**, confirmando a operação. Uma versão aprovada fica imutável.
 4. Use **Duplicar para rascunho** para revisar sem alterar a versão anterior. Uma nova aprovação substitui a vigente e mantém o histórico. Em **Comparar versões salvas**, selecione origem e destino para ver os campos diferentes.
@@ -41,6 +41,50 @@ Status: planejada, em produção, em revisão e concluída. O indicador Em produ
 8. Envie o guia para revisão, aprove com confirmação e duplique quando precisar de ajustes. O indicador do guia na lista corresponde à versão mais recente, independente do status de produção da aula.
 
 Estados pedagógicos: rascunho → em revisão → aprovado. Revisões podem voltar ao rascunho; aprovados só permitem duplicação. Uma aprovação posterior marca a antiga como substituída. Nenhuma versão é excluída. Se outra aprovação ocorrer enquanto a tela está aberta, atualize o histórico antes de tentar novamente.
+
+## Configurar IA
+
+O uso manual continua disponível sem nenhuma credencial. Para gerar com IA, configure no `.env` da raiz apenas os provedores desejados e reinicie o backend:
+
+```dotenv
+OPENAI_API_KEY=sua-chave
+GEMINI_API_KEY=sua-chave
+```
+
+Nunca use prefixo `VITE_` para esses segredos. Não envie chaves pelo chat ou inclua-as nos documentos do projeto. A interface exibe apenas se a credencial está configurada; não recebe seu valor. Assinaturas ChatGPT/Gemini e créditos das respectivas APIs são serviços separados.
+
+1. Abra **Configurações → Inteligência Artificial** e cadastre um modelo com ID e nome de exibição. Não há ID de modelo fixo: consulte o catálogo oficial do provedor e escolha um compatível com saída estruturada.
+2. Informe limite de tokens de saída e, somente se suportada, temperatura. Deixe temperatura vazia para não enviar esse parâmetro.
+3. Configure preços de entrada e saída por milhão de tokens em **USD** e a data de atualização. O preço de cache é opcional; na ausência dele, a estimativa usa o preço normal de entrada. Sem preços suficientes, a geração é bloqueada preventivamente.
+4. Selecione provedor/modelo padrão, orçamento mensal e tempo limite. Salve antes de clicar em **Testar conexão explicitamente**. Esse botão consulta o catálogo com a credencial, sem gerar conteúdo; não garante suporte a todos os parâmetros do modelo.
+5. Câmbio é opcional: preencha taxa BRL por USD e data para apresentar também estimativas em reais. Sem taxa identificada, os valores permanecem em USD.
+
+As chamadas vão diretamente às APIs OpenAI/Gemini pelo backend. O SDK é uma dependência local; não utiliza hospedagem ou AI Gateway. Nenhuma chamada externa é feita ao abrir as telas.
+
+## Gerar e revisar
+
+1. Aprove o roteiro e o template desejados. Para utilizar as 22 seções do modelo atualizado, revise e aprove essa versão do template primeiro.
+2. No roteiro aprovado, vincule a aula ao item correspondente. Resolva divergências de número, título, objetivos e duração. Aprovar não cria aulas automaticamente.
+3. Abra **Aulas → Guia → Gerar guia com IA**. Escolha modelo, versão aprovada do template e roteiro vigente; acrescente instruções e solicite a geração. A operação utiliza créditos da API escolhida.
+4. A tarefa é enfileirada e executada em outro processo; acompanhe estado, progresso por etapa, tentativas e erros. O conteúdo só é salvo se atender ao schema e às seções ativas, na ordem. Toda geração cria uma nova versão em rascunho.
+5. Revise no editor estruturado já existente, salve ajustes, compare versões, envie para revisão e aprove com confirmação explícita. A origem de IA identifica provedor/modelo. Código sugerido continua pendente de validação técnica.
+6. Para regenerar, abra **Regenerar uma seção com IA** no guia e escolha uma seção. O restante do conteúdo salvo e as referências exatas da versão de origem são preservados em um novo rascunho. As referências devem continuar vigentes e aprovadas para uma nova geração oficial.
+7. Se uma tarefa terminar enquanto você edita um guia, salve as alterações antes de abrir a nova versão gerada. Não há sobrescrita automática do editor ou aprovação automática.
+
+Pedidos repetidos com a mesma chave retornam a mesma tarefa. Para solicitar outra chamada deliberadamente, use **Preparar nova solicitação**. Não há repetição automática de chamadas pagas. Tarefas pendentes sobrevivem ao reinício; execuções interrompidas ficam falhas ou canceladas e exigem uma nova solicitação explícita.
+
+## Orçamento e solução de problemas
+
+O orçamento mensal usa UTC e reserva uma estimativa conservadora de entrada mais o limite de saída antes de enfileirar. Reservas concorrentes contam para o mesmo limite. O custo registrado é uma estimativa baseada no uso informado pela API e nos preços cadastrados, preservados em cada tarefa; não é uma fatura do provedor.
+
+Sem tokens suficientes, aparece **Custo não determinado**, e a reserva é mantida, inclusive após virada do mês, até haver conferência externa. Cancelamento antes de iniciar libera a reserva. Cancelar depois do envio pode consumir créditos e manter custo incerto. Nesta fase, não há conciliação automática nem botão para liberar reservas incertas. Configure também limites no próprio provedor para controlar a cobrança real.
+
+- **Botão de geração desabilitado:** confira credencial, modelo e aprovação de roteiro; salve alterações manuais pendentes.
+- **Vínculo ausente ou divergente:** abra o roteiro, vincule a aula e resolva as diferenças manualmente. Alterações em um roteiro aprovado exigem novo rascunho e aprovação.
+- **Modelo indisponível:** confira o ID, acesso da conta e suporte a saída estruturada; remova temperatura se não aceita.
+- **Saldo insuficiente:** consulte consumo, reservas e preços. Não há chamadas de geração com orçamento zero ou preços ausentes.
+- **Tarefa pendente sem avançar:** reinicie o backend para iniciar o worker. Após uma interrupção abrupta, a recuperação pode aguardar até 15 segundos pela liberação da trava local.
+- **Falha, tempo limite ou cancelamento:** confira o consumo na API antes de solicitar novamente. Falhas não alteram guias já salvos.
 
 ## Dados e configuração
 
@@ -69,4 +113,4 @@ Os testes da API usam banco temporário; os testes de interface usam DOM simulad
 
 ## Limites da entrega
 
-Uso individual no computador local, sem autenticação ou exposição na rede. Não há geração de IA, documentos, execução de código, capturas ou integrações externas. Versões pedagógicas são preservadas; exclusões permitidas de registros da Fase 1 são permanentes. Consulte [arquitetura](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md) e [relatório da Fase 2A](docs/PHASE_2A_REPORT.md).
+Uso individual no computador local, sem autenticação ou exposição na rede. A geração com IA depende de configuração e créditos de API. Não há DOCX, execução de código, capturas, publicação ou integração com NotebookLM/Canva/Drive nesta fase. Versões pedagógicas são preservadas; exclusões permitidas de registros da Fase 1 são permanentes. Consulte [arquitetura](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md) e relatórios das [Fases 2A](docs/PHASE_2A_REPORT.md) e [2B](docs/PHASE_2B_REPORT.md).

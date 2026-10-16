@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { AIGeneration, AIJobList } from '../components/AIGeneration';
 import {
   VersionWorkspace,
   InputField,
@@ -10,7 +11,7 @@ import {
   SaveFooter,
 } from '../components/Pedagogy';
 
-function GuideEditor({ row, refresh, onDirty }) {
+function GuideEditor({ row, refresh, onDirty, dirty, lesson, onQueued }) {
   const [content, setContent] = useState(row.data.content);
   const template = useResource(`/template-versions/${row.template_version_id}`);
   const roadmap = useResource(`/roadmaps/${row.roadmap_version_id}`);
@@ -18,6 +19,12 @@ function GuideEditor({ row, refresh, onDirty }) {
   const locked = row.status !== 'draft';
   return (
     <div className="pedagogy-panel">
+      {row.generation && (
+        <p className="ai-provenance">
+          Gerado com {row.generation.provider} · {row.generation.model}. Conteúdo sujeito a revisão
+          e validação técnica.
+        </p>
+      )}
       <ResourceState state={template} />
       <ResourceState state={roadmap} />
       {template.data && (
@@ -71,6 +78,13 @@ function GuideEditor({ row, refresh, onDirty }) {
           )}
         </>
       )}
+      <AIGeneration
+        key={row.id}
+        lesson={lesson}
+        source={row}
+        disabled={dirty || state.busy}
+        onQueued={onQueued}
+      />
     </div>
   );
 }
@@ -196,6 +210,9 @@ export default function Guides() {
   const { lessonId } = useParams();
   const lesson = useResource(`/lessons/${lessonId}`);
   const [revision, setRevision] = useState(0);
+  const [jobsRevision, setJobsRevision] = useState(0);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [generatedReady, setGeneratedReady] = useState(false);
   useEffect(() => setRevision(0), [lessonId]);
   return (
     <>
@@ -207,7 +224,7 @@ export default function Guides() {
           </Link>
           <div className="page-heading">
             <div>
-              <span className="eyebrow">GUIA PEDAGÓGICO MANUAL</span>
+              <span className="eyebrow">GUIA PEDAGÓGICO</span>
               <h1>
                 {lesson.data.number} · {lesson.data.title}
               </h1>
@@ -217,6 +234,35 @@ export default function Guides() {
               </p>
             </div>
           </div>
+          <AIGeneration
+            key={`ai:${lessonId}`}
+            lesson={lesson.data}
+            disabled={editorDirty}
+            onQueued={() => setJobsRevision((r) => r + 1)}
+          />
+          <AIJobList
+            key={`jobs:${lessonId}`}
+            lessonId={lessonId}
+            refreshKey={jobsRevision}
+            onCompleted={() => {
+              if (editorDirty) setGeneratedReady(true);
+              else setRevision((r) => r + 1);
+            }}
+          />
+          {generatedReady && (
+            <p className="warning" role="status">
+              Há uma nova versão gerada. Salve as alterações atuais antes de atualizar o histórico.{' '}
+              <button
+                disabled={editorDirty}
+                onClick={() => {
+                  setGeneratedReady(false);
+                  setRevision((r) => r + 1);
+                }}
+              >
+                Abrir nova versão gerada
+              </button>
+            </p>
+          )}
           <GuideCreation
             key={lessonId}
             lesson={lesson.data}
@@ -228,8 +274,16 @@ export default function Guides() {
             kind="guides"
             collection={`/lessons/${lessonId}/guides`}
             createBody={null}
+            onDirtyChange={setEditorDirty}
           >
-            {(props) => <GuideEditor key={`${props.row.id}:${props.row.updated_at}`} {...props} />}
+            {(props) => (
+              <GuideEditor
+                key={`${props.row.id}:${props.row.updated_at}`}
+                {...props}
+                lesson={lesson.data}
+                onQueued={() => setJobsRevision((r) => r + 1)}
+              />
+            )}
           </VersionWorkspace>
         </>
       )}

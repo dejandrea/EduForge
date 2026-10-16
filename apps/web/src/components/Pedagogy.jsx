@@ -213,12 +213,16 @@ export function VersionWorkspace({
   children,
   refreshKey = 0,
   disabled = false,
+  onDirtyChange,
 }) {
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
   const list = useResource(collection, `${revision}:${refreshKey}`);
   const selectedId =
     selected && list.data?.some((v) => v.id === selected) ? selected : list.data?.[0]?.id;

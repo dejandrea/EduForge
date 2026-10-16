@@ -84,7 +84,7 @@ test('CRUD, validação, dashboard, isolamento e persistência após reabrir SQL
       db.prepare('SELECT title FROM lessons WHERE id=?').get(l.id).title,
       'Aula revisada',
     );
-    assert.equal(db.prepare('SELECT count(*) AS n FROM migrations').get().n, 3);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM migrations').get().n, 4);
     server = createApp(db).listen(0, '127.0.0.1');
     await new Promise((resolve) => server.once('listening', resolve));
     const base2 = `http://127.0.0.1:${server.address().port}/api`;

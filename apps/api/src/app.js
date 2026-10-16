@@ -2,7 +2,8 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { projectSchema, lessonSchema } from '@eduforge/shared';
 import { pedagogyRouter } from './pedagogy.js';
-export function createApp(db) {
+import { aiRouter } from './ai/routes.js';
+export function createApp(db, options = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use((req, res, next) => {
@@ -17,6 +18,7 @@ export function createApp(db) {
     next();
   });
   app.use(express.json({ limit: '2mb' }));
+  app.use('/api', aiRouter(db, options.ai));
   app.use('/api', pedagogyRouter(db));
   const get = (table, id) => {
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
