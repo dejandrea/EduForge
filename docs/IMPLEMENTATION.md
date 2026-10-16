@@ -13,7 +13,7 @@ Dashboard com totais e projetos recentes; CRUD de projetos e aulas; busca de pro
 - `docs`: `ARCHITECTURE.md`, `ROADMAP.md`, `IMPLEMENTATION.md`.
 - `storage/.gitkeep`: diretório reservado para persistência. A inicialização cria o banco vazio, sem registros pessoais ou demonstrativos.
 
-Os dois documentos originais foram preservados.
+Os dois documentos originais foram preservados e movidos para `docs/`: [PRD](Documento%201%20%E2%80%94%20PRD%20do%20EduForge%20v0.1.md) e [instruções de implementação](Documento%202%20%E2%80%94%20Primeiro%20prompt%20para%20o%20Codex.md).
 
 ## Execução e resultados
 

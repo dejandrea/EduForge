@@ -1,6 +1,6 @@
 # EduForge
 
-Da ideia à aula pronta. Aplicação local de gestão de projetos educacionais e aulas. Esta entrega implementa **somente a Fase 1** descrita nos dois documentos originais da pasta.
+Da ideia à aula pronta. Aplicação local de gestão de projetos educacionais e aulas. Esta entrega implementa **somente a Fase 1** descrita no [PRD](docs/Documento%201%20%E2%80%94%20PRD%20do%20EduForge%20v0.1.md) e nas [instruções de implementação](docs/Documento%202%20%E2%80%94%20Primeiro%20prompt%20para%20o%20Codex.md), disponíveis em `docs/`.
 
 ## Iniciar no Windows
 
