@@ -133,3 +133,18 @@ Migration 005 adiciona referências, materiais, extrações, snapshots, conclus�
 `memory.js` valida procedência, citações e seleção consentida de contexto. `ai/context.js` incorpora apenas os materiais/resumos selecionados, preservando o contexto anterior da Fase 2B. `GET /ai/jobs/:id/sources` expõe o manifesto congelado. `LessonMaterials.jsx`, `ProjectReferences.jsx` e `ProjectMemory.jsx` oferecem os fluxos; `ContextSelection.jsx` é compartilhado com a geração de guias.
 
 Limites e decisões detalhados em [PHASE_2C_REPORT.md](PHASE_2C_REPORT.md). O backup passa a exigir banco e `storage/materials` juntos.
+
+
+## Código e evidências — Fase 3
+
+Migration 006 cria `code_preparations`, `code_revisions`, `code_file_references`, `code_evidence` e `code_guide_links`, sem alterar 001–005. Preparar um repositório reutiliza `project_references`, mantendo o vínculo com aula/projeto. Revisões guardam manifesto por arquivo, digest SHA-256, resumo, pai e revisão humana. Os bytes ficam em `storage/code/blobs`, identificados por hash e conferidos na leitura; nenhuma imagem grande entra no SQLite. A árvore editada é uma cópia virtual local, sem checkout ou modificação do original.
+
+`code/git.js` usa Git oficial com fetch raso em repositório bare temporário, hooks/templates/configurações de credenciais desativados, sem submódulos/checkout. Apenas GitHub HTTPS público selecionado explicitamente; branch e commit são registrados. Symlinks, paths inseguros e credenciais conhecidas são recusados ou omitidos. Há limites de arquivos, bytes, tempo, saída e monitoramento de disco, configuráveis no backend. O monitoramento é limite de aplicação, sem quota de sistema operacional.
+
+`code/service.js` serializa preparações assíncronas persistidas, preserva falhas/cancelamentos e retoma pendentes no reinício. Em execução interrompida, marca falha em vez de repetir automaticamente. Mudanças criam revisões novas; aprovação/rejeição compara o digest. Triggers impedem sobrescrita de snapshots e evidências avaliadas. `inspection.js` observa declarações e referências sem executar código. `png.js` valida e remove metadados auxiliares de PNGs manuais.
+
+Execução e captura automática respondem 409: não existe executor/navegador isolado com política de rede disponível. Não há shell arbitrário, npm ou scripts importados executados no hospedeiro. Resultados de inspeção são `observed`, relatos manuais `reported`, sem afirmar teste aprovado. Interfaces distinguem revisão humana de validação funcional.
+
+`CodeWorkspace` e os componentes `CodeFiles`, `CodeEvidence`, `CodeGuideLinks` apresentam histórico, propostas, comparação por arquivo, evidências e associações. Os vínculos apontam para guia/seção/etapa e revisão exatos, independentemente de novas versões. `Guides.jsx` consulta os vínculos sem alterar o conteúdo do guia. Nenhuma infraestrutura adicional de IA foi criada.
+
+Detalhes, endpoints e limites: [PHASE_3_REPORT.md](PHASE_3_REPORT.md). Backup passa a incluir `storage/code` junto do banco e materiais. Não há coleta automática de blobs órfãos ou limpeza de temporários deixados por queda abrupta.

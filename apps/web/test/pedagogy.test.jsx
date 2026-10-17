@@ -19,15 +19,19 @@ import AISettings from '../src/pages/AISettings';
 import LessonMaterials from '../src/pages/LessonMaterials';
 import ProjectReferences from '../src/pages/ProjectReferences';
 import ContextSelection, { emptySelection } from '../src/components/ContextSelection';
+import CodeWorkspace from '../src/pages/CodeWorkspace';
 
 // Load the server with Node so Vite does not bundle native SQLite for the DOM environment.
 const require = createRequire(import.meta.url);
 const { createApp } = require('../../api/src/app.js');
 const { openDatabase } = require('../../api/src/database.js');
 const { createAIService } = require('../../api/src/ai/service.js');
+const { mkdtempSync, rmSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const { join } = require('node:path');
 configure({ asyncUtilTimeout: 5000 });
 
-let db, server, project, request, aiService, providerCalls;
+let db, server, project, request, aiService, providerCalls, codeFolder, codeService;
 const nativeFetch = globalThis.fetch;
 beforeEach(async () => {
   db = openDatabase(':memory:');
@@ -54,7 +58,20 @@ beforeEach(async () => {
   };
   const providers = { openai: provider, gemini: provider };
   aiService = createAIService(db, { providers });
-  server = createApp(db, { ai: { providers } }).listen(0, '127.0.0.1');
+  codeFolder = mkdtempSync(join(tmpdir(), 'eduforge-code-dom-'));
+  const app = createApp(db, {
+    ai: { providers },
+    code: {
+      storageRoot: codeFolder,
+      prepareRepository: async () => ({
+        commit: 'a'.repeat(40),
+        files: [{ path: 'src/game.js', bytes: Buffer.from('export const frog = 1;') }],
+        warnings: [],
+      }),
+    },
+  });
+  codeService = app.locals.code;
+  server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   vi.stubGlobal('fetch', (path, options) => nativeFetch(new URL(path, base), options));
@@ -73,8 +90,10 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   cleanup();
+  await codeService.close();
   await new Promise((resolve) => server.close(resolve));
   db.close();
+  rmSync(codeFolder, { recursive: true, force: true });
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -98,6 +117,63 @@ async function approvedRoadmap() {
   await request(`/roadmaps/${row.id}/transition`, { status: 'in_review' });
   return request(`/roadmaps/${row.id}/approve`, { confirm: true, expected_approved_id: null });
 }
+
+test('código e capturas prepara cópia simulada, inspeciona, cria revisão e aprova exatamente o hash', async () => {
+  const lesson = await request(`/projects/${project.id}/lessons`, {
+    number: 3,
+    title: 'Frogger',
+    duration: 60,
+  });
+  const ref = await request(`/projects/${project.id}/references`, {
+    kind: 'github',
+    title: 'Frogger Game',
+    url: 'https://github.com/example/frogger',
+    branch: 'main',
+    commit_sha: null,
+  });
+  page(`/lessons/${lesson.id}/code`, '/lessons/:lessonId/code', <CodeWorkspace />);
+  await screen.findByText(/Nível B indisponível/);
+  await screen.findByRole('option', { name: /Frogger Game/ });
+  fireEvent.change(screen.getByLabelText('Repositório GitHub associado'), {
+    target: { value: ref.id },
+  });
+  fireEvent.change(screen.getByLabelText('Objetivo técnico da aula'), {
+    target: { value: 'Movimento do sapo' },
+  });
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Autorizar preparação da cópia de referência' }),
+  );
+  const file = await screen.findByRole('button', { name: 'src/game.js' });
+  fireEvent.click(file);
+  await waitFor(() =>
+    expect(screen.getByLabelText('Conteúdo proposto').value).toBe('export const frog = 1;'),
+  );
+  fireEvent.change(screen.getByLabelText('Conteúdo proposto'), {
+    target: { value: 'export const frog = 2;' },
+  });
+  expect(screen.getByRole('button', { name: 'Aprovar esta revisão de código' }).disabled).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Adicionar alteração à proposta' }));
+  fireEvent.change(screen.getByLabelText('Resumo das alterações'), {
+    target: { value: 'Atualiza movimento' },
+  });
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Gravar nova revisão com as alterações adicionadas' }),
+  );
+  await screen.findByRole('heading', { name: 'Arquivos da revisão 2' });
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Executar inspeção estática sem rodar código' }),
+  );
+  await screen.findByText('Inspeção estática concluída; funcionamento não testado.');
+  fireEvent.click(screen.getByRole('button', { name: 'Aprovar esta revisão de código' }));
+  await screen.findByText('Código aprovado pela professora');
+  expect(db.prepare("SELECT number FROM code_revisions WHERE status='approved'").get().number).toBe(
+    2,
+  );
+  expect(db.prepare("SELECT count(*) n FROM code_evidence WHERE result='passed'").get().n).toBe(0);
+  expect(providerCalls.generate).toBe(0);
+});
 
 test('referências são cadastradas sem leitura remota ou chamada de IA', async () => {
   page(`/projects/${project.id}/references`, '/projects/:id/references', <ProjectReferences />);

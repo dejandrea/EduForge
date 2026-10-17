@@ -34,3 +34,4 @@ export const lessonSchema = z
     status: z.enum(Object.keys(statuses)).default('planned'),
   })
   .strict();
+export * from './code.js';

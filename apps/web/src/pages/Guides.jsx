@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { AIGeneration, AIJobList } from '../components/AIGeneration';
+import { GuideTechnicalEvidence } from '../components/CodeGuideLinks';
 import UsedSources from '../components/UsedSources';
 import {
   VersionWorkspace,
@@ -29,6 +30,7 @@ function GuideEditor({ row, refresh, onDirty, dirty, lesson, onQueued }) {
       <ResourceState state={template} />
       {row.generation && <UsedSources jobId={row.generation.id} />}
       <ResourceState state={roadmap} />
+      <GuideTechnicalEvidence guideId={row.id} lessonId={lesson.id} />
       {template.data && (
         <>
           <p className="read-only">

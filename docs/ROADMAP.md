@@ -20,7 +20,7 @@ Implementada: referências por projeto; arquivos locais por aula e extração te
 
 ## Fase 3 — Código e capturas
 
-Associação de repositórios, cópias isoladas, comandos permitidos, evidências de testes e capturas. Revisão obrigatória antes de aplicar alterações.
+Implementada a camada de inspeção estática: preparações Git por aula usando referências existentes, cópias versionadas por hash, propostas e comparação de arquivos, aprovação humana, evidências, capturas PNG manuais e vínculos com etapas/versionamento de guias. Execução e capturas automáticas explicitamente indisponíveis sem isolamento adequado; não há publicação no GitHub. Validação assistida com o repositório real e inspeção visual pendentes. Ver `PHASE_3_REPORT.md`.
 
 ## Fase 4 — Documentos
 

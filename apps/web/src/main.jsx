@@ -18,6 +18,7 @@ import AISettings from './pages/AISettings';
 import LessonMaterials from './pages/LessonMaterials';
 import ProjectReferences from './pages/ProjectReferences';
 import ProjectMemory from './pages/ProjectMemory';
+import CodeWorkspace from './pages/CodeWorkspace';
 import { api } from './api';
 import './components/Layout.css';
 import './pages/Workspace.css';
@@ -450,6 +451,7 @@ function LessonTable({ lessons, onDelete }) {
               <td>
                 <div className="actions">
                   <Link to={`/projects/${l.project_id}/lessons/${l.id}/edit`}>Editar</Link>
+                  <Link to={`/lessons/${l.id}/code`}>Código e capturas</Link>
                   <Link to={`/lessons/${l.id}/materials`}>Materiais e memória</Link>
                   <Link to={`/lessons/${l.id}/guides`}>
                     Guia ? {reviewStatuses[l.guide_status] || 'Pendente'}
@@ -623,7 +625,7 @@ function App() {
             <span>
               Workspace <span className="muted">/ EduForge</span>
             </span>
-            <span className="local-label">● Local · Fase 2C</span>
+            <span className="local-label">● Local · Fase 3</span>
           </header>
           <main>
             <Routes>
@@ -641,6 +643,7 @@ function App() {
               <Route path="/templates" element={<Templates />} />
               <Route path="/templates/:templateId" element={<TemplateDetail />} />
               <Route path="/lessons/:lessonId/guides" element={<Guides />} />
+              <Route path="/lessons/:lessonId/code" element={<CodeWorkspace />} />
               <Route path="/lessons/:lessonId/materials" element={<LessonMaterials />} />
               <Route path="/projects/:id/references" element={<ProjectReferences />} />
               <Route path="/projects/:id/memory" element={<ProjectMemory />} />
