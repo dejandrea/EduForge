@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { openDatabase } from '../database.js';
-import { createAIService } from './service.js';
+import { createAIWorkerService } from './service.js';
 
 export async function runWorker(
   db,
-  { signal, service = createAIService(db), interval = 500 } = {},
+  { signal, service = createAIWorkerService(db), interval = 500 } = {},
 ) {
   const owner = randomUUID();
   const sleep = (ms) =>

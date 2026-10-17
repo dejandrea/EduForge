@@ -15,6 +15,9 @@ import { Templates, TemplateDetail } from './pages/Templates';
 import Guides from './pages/Guides';
 import Roadmaps from './pages/Roadmaps';
 import AISettings from './pages/AISettings';
+import LessonMaterials from './pages/LessonMaterials';
+import ProjectReferences from './pages/ProjectReferences';
+import ProjectMemory from './pages/ProjectMemory';
 import { api } from './api';
 import './components/Layout.css';
 import './pages/Workspace.css';
@@ -435,12 +438,19 @@ function LessonTable({ lessons, onDelete }) {
                 {l.objectives && <small className="objectives">{l.objectives}</small>}
               </td>
               <td>
-                <span className={`badge ${l.status}`}>{statuses[l.status]}</span>
+                <span className={`badge ${l.status}`}>
+                  {l.status === 'completed' && l.completion_origin === 'imported'
+                    ? 'Concluída · material importado'
+                    : l.status === 'completed' && l.completion_origin === 'eduforge'
+                      ? 'Concluída · guia EduForge'
+                      : statuses[l.status]}
+                </span>
               </td>
               <td>{l.duration} min</td>
               <td>
                 <div className="actions">
                   <Link to={`/projects/${l.project_id}/lessons/${l.id}/edit`}>Editar</Link>
+                  <Link to={`/lessons/${l.id}/materials`}>Materiais e memória</Link>
                   <Link to={`/lessons/${l.id}/guides`}>
                     Guia ? {reviewStatuses[l.guide_status] || 'Pendente'}
                   </Link>
@@ -515,6 +525,12 @@ function ProjectDetail() {
             </div>
           </div>
           <div className="pedagogy-tabs">
+            <Link className="button" to={`/projects/${id}/references`}>
+              Referências do projeto
+            </Link>
+            <Link className="button" to={`/projects/${id}/memory`}>
+              Histórico pedagógico
+            </Link>
             <Link className="button primary" to={`/projects/${id}/roadmap`}>
               Roteiro pedagógico →
             </Link>
@@ -607,7 +623,7 @@ function App() {
             <span>
               Workspace <span className="muted">/ EduForge</span>
             </span>
-            <span className="local-label">● Local · Fase 2B</span>
+            <span className="local-label">● Local · Fase 2C</span>
           </header>
           <main>
             <Routes>
@@ -625,6 +641,9 @@ function App() {
               <Route path="/templates" element={<Templates />} />
               <Route path="/templates/:templateId" element={<TemplateDetail />} />
               <Route path="/lessons/:lessonId/guides" element={<Guides />} />
+              <Route path="/lessons/:lessonId/materials" element={<LessonMaterials />} />
+              <Route path="/projects/:id/references" element={<ProjectReferences />} />
+              <Route path="/projects/:id/memory" element={<ProjectMemory />} />
               <Route
                 path="*"
                 element={

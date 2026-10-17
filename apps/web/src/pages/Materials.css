@@ -1,0 +1,75 @@
+.source-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 420px;
+  overflow: auto;
+  background: #101824;
+  padding: 18px;
+  border-radius: 8px;
+  line-height: 1.6;
+  font:
+    13px/1.7 Consolas,
+    monospace;
+}
+.selected-source,
+.memory-claim {
+  border: 1px solid #37465b;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 14px 0;
+  overflow-wrap: anywhere;
+}
+.context-selection {
+  border: 1px solid #3c4b5d;
+  border-radius: 10px;
+  padding: 18px;
+  margin: 20px 0;
+}
+.context-selection .check-field {
+  margin: 14px 0;
+  line-height: 1.6;
+}
+.memory-claim blockquote {
+  border-left: 3px solid #6e875c;
+  margin: 18px 0;
+  padding: 8px 14px;
+  color: #aebbd0;
+  white-space: pre-wrap;
+}
+.material-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.material-meta {
+  color: #98a9bf;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.source-label {
+  font-size: 12px;
+  color: #b9dc9b;
+}
+.materials-upload input {
+  max-width: 100%;
+  margin: 15px 0;
+}
+.memory-source-picker {
+  padding: 15px;
+  background: #111c2a;
+  border-radius: 8px;
+}
+.context-selection h4 {
+  margin: 20px 0 10px;
+}
+@media (max-width: 620px) {
+  .context-selection {
+    padding: 12px;
+  }
+  .memory-claim {
+    padding: 12px;
+  }
+}

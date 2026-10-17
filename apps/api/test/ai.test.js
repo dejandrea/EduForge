@@ -145,6 +145,82 @@ async function fixture(t) {
   };
 }
 
+test('fase 2C congela contexto selecionado e manifesto sem incluir materiais automaticamente', async (t) => {
+  const { request, lesson, body, service, state, db } = await fixture(t);
+  const material = randomUUID(),
+    extraction = randomUUID();
+  db.prepare(
+    "INSERT INTO lesson_materials VALUES (?,?,'markdown','historico.md','upload',NULL,NULL,40,?,'ready',?)",
+  ).run(material, lesson.id, 'd'.repeat(64), new Date().toISOString());
+  db.prepare('INSERT INTO material_extractions VALUES (?,?,1,?,?,?)').run(
+    extraction,
+    material,
+    'FONTE-EXCLUSIVA: construimos rotas.',
+    '[]',
+    new Date().toISOString(),
+  );
+  const data = {
+    claims: [
+      {
+        field: 'objectives',
+        text: 'Objetivo executado diferente do plano',
+        sources: [{ kind: 'extraction', id: extraction, quote: 'construimos rotas.' }],
+      },
+    ],
+  };
+  const memory = await request(`/lessons/${lesson.id}/memory`, 'POST', data, 201);
+  await request(`/memory/${memory.id}/approve`, 'POST', {
+    confirm: true,
+    expected_approved_id: null,
+  });
+  const input = body();
+  await request(`/lessons/${lesson.id}/ai-jobs`, 'POST', input, 202);
+  await service.processNext();
+  assert.ok(!state.prompts.at(-1).includes('FONTE-EXCLUSIVA'));
+  const selection = {
+    summary_ids: [memory.id],
+    excerpts: [
+      { kind: 'extraction', id: extraction, quote: 'FONTE-EXCLUSIVA: construimos rotas.' },
+    ],
+    confirm_external: false,
+    reviewed_conflicts: false,
+  };
+  const preview = await request(`/lessons/${lesson.id}/context-preview`, 'POST', selection);
+  assert.equal(preview.conflicts.length, 1);
+  await request(
+    `/lessons/${lesson.id}/ai-jobs`,
+    'POST',
+    { ...body(), context_selection: selection },
+    409,
+  );
+  selection.confirm_external = true;
+  await request(
+    `/lessons/${lesson.id}/ai-jobs`,
+    'POST',
+    { ...body(), context_selection: selection },
+    409,
+  );
+  selection.reviewed_conflicts = true;
+  const queued = await request(
+    `/lessons/${lesson.id}/ai-jobs`,
+    'POST',
+    { ...body(), context_selection: selection },
+    202,
+  );
+  const completed = await service.processNext();
+  assert.equal(completed.status, 'completed');
+  assert.ok(state.prompts.at(-1).includes('FONTE-EXCLUSIVA'));
+  const manifest = await request(`/ai/jobs/${queued.id}/sources`);
+  assert.equal(manifest.sources.length, 2);
+  assert.equal(manifest.conflicts.length, 1);
+  const copy = await request(`/memory/${memory.id}/duplicate`, 'POST', {}, 201);
+  await request(`/memory/${copy.id}/approve`, 'POST', {
+    confirm: true,
+    expected_approved_id: memory.id,
+  });
+  assert.equal((await request(`/ai/jobs/${queued.id}/sources`)).sources[0].id, memory.id);
+});
+
 test('geração assíncrona, idempotência, contrato de guia, custos e aprovação reutilizada', async (t) => {
   const f = await fixture(t),
     { request, lesson, body, service, state, db, template } = f;

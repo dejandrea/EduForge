@@ -16,6 +16,9 @@ import { TemplateDetail } from '../src/pages/Templates';
 import Guides from '../src/pages/Guides';
 import Roadmaps from '../src/pages/Roadmaps';
 import AISettings from '../src/pages/AISettings';
+import LessonMaterials from '../src/pages/LessonMaterials';
+import ProjectReferences from '../src/pages/ProjectReferences';
+import ContextSelection, { emptySelection } from '../src/components/ContextSelection';
 
 // Load the server with Node so Vite does not bundle native SQLite for the DOM environment.
 const require = createRequire(import.meta.url);
@@ -95,6 +98,78 @@ async function approvedRoadmap() {
   await request(`/roadmaps/${row.id}/transition`, { status: 'in_review' });
   return request(`/roadmaps/${row.id}/approve`, { confirm: true, expected_approved_id: null });
 }
+
+test('referências são cadastradas sem leitura remota ou chamada de IA', async () => {
+  page(`/projects/${project.id}/references`, '/projects/:id/references', <ProjectReferences />);
+  const title = await screen.findByLabelText('Título da referência');
+  fireEvent.change(title, { target: { value: 'Código do curso' } });
+  fireEvent.change(screen.getByLabelText('URL da referência'), {
+    target: { value: 'https://github.com/example/course' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Cadastrar link' }));
+  await screen.findByText('Código do curso', { selector: 'h2' });
+  expect(db.prepare('SELECT count(*) n FROM project_references').get().n).toBe(1);
+  expect(db.prepare('SELECT count(*) n FROM github_snapshots').get().n).toBe(0);
+  expect(providerCalls.generate).toBe(0);
+});
+
+test('materiais mostram links como não importados e contexto exige trecho literal', async () => {
+  const lesson = await request(`/projects/${project.id}/lessons`, {
+    number: 12,
+    title: 'Aula existente',
+    duration: 60,
+  });
+  await request(`/lessons/${lesson.id}/materials/link`, {
+    name: 'Slides existentes',
+    url: 'https://example.org/slides',
+  });
+  const view = page(
+    `/lessons/${lesson.id}/materials`,
+    '/lessons/:lessonId/materials',
+    <LessonMaterials />,
+  );
+  await screen.findByText('Slides existentes', { selector: 'h3' });
+  expect(screen.getByText('Link apenas cadastrado')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Marcar como concluída anteriormente' }));
+  await screen.findByRole('alert');
+  expect(db.prepare('SELECT status FROM lessons WHERE id=?').get(lesson.id).status).toBe('planned');
+  view.unmount();
+  const material = crypto.randomUUID(),
+    extraction = crypto.randomUUID();
+  db.prepare(
+    "INSERT INTO lesson_materials VALUES (?,?,'markdown','aula.md','upload',NULL,NULL,20,?,'ready',?)",
+  ).run(material, lesson.id, 'c'.repeat(64), new Date().toISOString());
+  db.prepare('INSERT INTO material_extractions VALUES (?,?,1,?,?,?)').run(
+    extraction,
+    material,
+    'Criamos rotas HTTP.',
+    '[]',
+    new Date().toISOString(),
+  );
+  function Selection() {
+    const [value, setValue] = React.useState(emptySelection);
+    return <ContextSelection lessonId={lesson.id} value={value} onChange={setValue} />;
+  }
+  render(<Selection />);
+  await screen.findByRole('option', { name: /aula.md/ });
+  fireEvent.change(screen.getByLabelText('Fonte de um trecho'), {
+    target: { value: `extraction:${extraction}` },
+  });
+  fireEvent.change(screen.getByLabelText('Trecho literal para usar como contexto'), {
+    target: { value: 'Inventado' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Adicionar trecho ao contexto' }));
+  await screen.findByRole('alert');
+  fireEvent.change(screen.getByLabelText('Trecho literal para usar como contexto'), {
+    target: { value: 'Criamos rotas HTTP.' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Adicionar trecho ao contexto' }));
+  expect(screen.getByRole('button', { name: 'Remover trecho' })).toBeTruthy();
+  expect(screen.getByRole('checkbox', { name: /Autorizo enviar/ }).checked).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Revisar contexto local e divergências' }));
+  await screen.findByText('Prévia local: nenhuma chamada ao provedor foi feita.');
+  expect(providerCalls.generate).toBe(0);
+});
 
 test('editor do roteiro salva sequência, exige confirmação, duplica e compara versões', async () => {
   page(`/projects/${project.id}/roadmap`, '/projects/:id/roadmap', <Roadmap />);

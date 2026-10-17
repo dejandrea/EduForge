@@ -14,6 +14,10 @@ Implementada: versões de roteiro e sequência ordenada, dependências pedagógi
 
 Implementada conforme `docs/prompts/Fase 2B.md`: acesso direto a Roteiros no menu; OpenAI/Gemini com modelos e preços configuráveis; credenciais somente no backend; geração estruturada e regeneração de uma seção; worker separado com tarefas persistidas, cancelamento e prevenção de repetição; orçamento, uso e custos estimados. Editor, histórico e aprovação reutilizam a Fase 2A. Testes usam provedores simulados, sem créditos reais. Validação com credenciais e avaliação pedagógica reais ficam para uso assistido da professora; ver `PHASE_2B_REPORT.md`.
 
+## Fase 2C — Materiais existentes e memória pedagógica
+
+Implementada: referências por projeto; arquivos locais por aula e extração textual versionada; conclusão de aulas importadas sem guia; resumos com evidências e aprovação humana; análise opcional reutilizando a infraestrutura de IA; consulta explícita de arquivos GitHub por commit; seleção limitada de contexto e manifesto das fontes usadas. Sem OCR, execução de código ou importação remota do Drive. Ver `PHASE_2C_REPORT.md`.
+
 ## Fase 3 — Código e capturas
 
 Associação de repositórios, cópias isoladas, comandos permitidos, evidências de testes e capturas. Revisão obrigatória antes de aplicar alterações.

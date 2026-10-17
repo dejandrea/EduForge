@@ -1,6 +1,7 @@
 import { z } from 'zod';
 export * from './pedagogy.js';
 export * from './ai.js';
+export * from './materials.js';
 export const statuses = {
   planned: 'Planejada',
   in_progress: 'Em produção',

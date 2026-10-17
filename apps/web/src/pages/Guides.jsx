@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { AIGeneration, AIJobList } from '../components/AIGeneration';
+import UsedSources from '../components/UsedSources';
 import {
   VersionWorkspace,
   InputField,
@@ -26,6 +27,7 @@ function GuideEditor({ row, refresh, onDirty, dirty, lesson, onQueued }) {
         </p>
       )}
       <ResourceState state={template} />
+      {row.generation && <UsedSources jobId={row.generation.id} />}
       <ResourceState state={roadmap} />
       {template.data && (
         <>
@@ -263,6 +265,9 @@ export default function Guides() {
               </button>
             </p>
           )}
+          <Link className="button" to={`/lessons/${lessonId}/materials`}>
+            Materiais existentes e memória da aula
+          </Link>
           <GuideCreation
             key={lessonId}
             lesson={lesson.data}

@@ -4,6 +4,7 @@ import { jobStatuses } from '@eduforge/shared';
 import { api } from '../api';
 import { ResourceState, useResource, InputField } from './Pedagogy';
 import { usd } from '../pages/AISettings';
+import ContextSelection, { emptySelection } from './ContextSelection';
 import '../pages/AISettings.css';
 
 export function AIJobList({ lessonId, onCompleted, refreshKey }) {
@@ -113,6 +114,7 @@ export function AIJobList({ lessonId, onCompleted, refreshKey }) {
   );
 }
 export function AIGeneration({ lesson, onQueued, source = null, disabled = false }) {
+  const [contextSelection, setContextSelection] = useState(emptySelection);
   const config = useResource('/ai/settings'),
     templates = useResource('/templates'),
     roadmaps = useResource(`/projects/${lesson.project_id}/roadmaps`);
@@ -147,6 +149,7 @@ export function AIGeneration({ lesson, onQueued, source = null, disabled = false
       provider: selectedProvider,
       model: selectedModel,
       instructions,
+      context_selection: contextSelection,
       ...(source ? { source_guide_id: source.id, section_id: section } : {}),
     };
     const fingerprint = JSON.stringify(body);
@@ -303,6 +306,11 @@ export function AIGeneration({ lesson, onQueued, source = null, disabled = false
                 multiline
                 value={instructions}
                 onChange={setInstructions}
+              />
+              <ContextSelection
+                lessonId={lesson.id}
+                value={contextSelection}
+                onChange={setContextSelection}
               />
               <p className="read-only">
                 Saldo disponível: {usd(config.data.budget.remaining_usd)}. A reserva será calculada

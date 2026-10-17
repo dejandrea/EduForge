@@ -97,7 +97,14 @@ export function createProviders({ env = process.env, fetchImpl = fetch } = {}) {
           } while (page);
           return ids;
         },
-        async generate({ model, prompt, max_output_tokens, temperature, signal }) {
+        async generate({
+          model,
+          prompt,
+          max_output_tokens,
+          temperature,
+          signal,
+          schema = outputSchema,
+        }) {
           const key = env[credentialNames[provider]];
           if (!key) throw new AIError('MISSING_CREDENTIAL', 'Credencial ausente no backend.');
           const client =
@@ -107,7 +114,7 @@ export function createProviders({ env = process.env, fetchImpl = fetch } = {}) {
           try {
             const result = await generateText({
               model: provider === 'openai' ? client.responses(model) : client(model),
-              output: Output.object({ schema: outputSchema }),
+              output: Output.object({ schema }),
               prompt,
               maxOutputTokens: max_output_tokens,
               ...(temperature === null ? {} : { temperature }),

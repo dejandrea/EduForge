@@ -122,3 +122,14 @@ POST recebe `request_key`, `provider`, `model`, `template_version_id`, `roadmap_
 `Roadmaps.jsx` torna o cadastro acessível pelo menu sem recriar o editor. `AISettings.jsx` gerencia preferências e consumo. `AIGeneration.jsx` oferece seleção, enfileiramento, progresso por marcos e cancelamento. `Guides.jsx` reutiliza o editor estruturado e protege edições pendentes quando uma geração termina. Não há um segundo editor.
 
 Testes adicionais exercitam HTTP, SQLite, provedores falsos, adaptadores com fetch simulado, worker em processo separado e fluxo DOM → API → tarefa → guia. Nenhum teste automatizado depende de credenciais ou consome créditos reais.
+
+
+## Materiais e memória — Fase 2C
+
+`materials/routes.js` concentra referências, uploads, downloads, extrações, conclusão importada, resumos versionados e análises. `storage.js` usa nomes por hash, valida caminhos e serializa extrações em workers limitados; `extract.js` lê DOCX via ZIP/XML, PDF textual via PDF.js e UTF-8. `github.js` consulta apenas endpoints REST oficiais com caminhos autorizados e commit fixado. Não há execução de código externo.
+
+Migration 005 adiciona referências, materiais, extrações, snapshots, conclusões e memórias, além da fila `memory_analysis_*`. `ai/service.js` reutiliza o mesmo contrato de tarefas com tabelas fixas por tipo; `createAIWorkerService` processa as duas filas sob a trava existente. O orçamento agrega ambas. Análise não exige roteiro/template e gera somente rascunho com citações validadas.
+
+`memory.js` valida procedência, citações e seleção consentida de contexto. `ai/context.js` incorpora apenas os materiais/resumos selecionados, preservando o contexto anterior da Fase 2B. `GET /ai/jobs/:id/sources` expõe o manifesto congelado. `LessonMaterials.jsx`, `ProjectReferences.jsx` e `ProjectMemory.jsx` oferecem os fluxos; `ContextSelection.jsx` é compartilhado com a geração de guias.
+
+Limites e decisões detalhados em [PHASE_2C_REPORT.md](PHASE_2C_REPORT.md). O backup passa a exigir banco e `storage/materials` juntos.

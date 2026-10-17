@@ -3,13 +3,19 @@ import { createAIService } from './service.js';
 export function aiRouter(db, options = {}) {
   const router = Router(),
     service = createAIService(db, options);
+  const analysis = createAIService(db, { ...options, kind: 'memory' });
   router.get('/ai/settings', (req, res) => res.json(service.publicSettings()));
   router.put('/ai/settings', (req, res) => res.json(service.saveSettings(req.body)));
   router.post('/ai/test-connection', async (req, res) =>
     res.json(await service.testConnection(req.body)),
   );
   router.get('/ai/usage', (req, res) =>
-    res.json({ budget: service.summary(), records: service.usageHistory() }),
+    res.json({
+      budget: service.summary(),
+      records: [...service.usageHistory(), ...analysis.usageHistory()]
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, 200),
+    }),
   );
   router.get('/ai/jobs', (req, res) => res.json(service.listJobs()));
   router.get('/ai/jobs/:id', (req, res) => res.json(service.getJob(req.params.id)));

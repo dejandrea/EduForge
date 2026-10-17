@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { contextSelectionSchema } from './materials.js';
 const provider = z.enum(['openai', 'gemini']);
 const modelId = z
   .string()
@@ -70,6 +71,7 @@ export const aiGenerateSchema = z
     instructions: z.string().trim().max(10000).default(''),
     source_guide_id: z.uuid().optional(),
     section_id: z.string().min(1).max(80).optional(),
+    context_selection: contextSelectionSchema.optional(),
   })
   .strict()
   .superRefine((data, ctx) => {

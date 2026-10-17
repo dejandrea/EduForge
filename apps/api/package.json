@@ -12,6 +12,10 @@
     "@ai-sdk/openai": "^4.0.95",
     "@eduforge/shared": "*",
     "ai": "^7.0.142",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "fast-xml-parser": "^5.11.2",
+    "fflate": "^0.8.3",
+    "multer": "^2.4.0",
+    "pdfjs-dist": "^6.4.299"
   }
 }

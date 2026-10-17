@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { projectSchema, lessonSchema } from '@eduforge/shared';
 import { pedagogyRouter } from './pedagogy.js';
 import { aiRouter } from './ai/routes.js';
+import { materialsRouter } from './materials/routes.js';
 export function createApp(db, options = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -18,6 +19,7 @@ export function createApp(db, options = {}) {
     next();
   });
   app.use(express.json({ limit: '2mb' }));
+  app.use('/api', materialsRouter(db, { ...options.materials, ai: options.ai }));
   app.use('/api', aiRouter(db, options.ai));
   app.use('/api', pedagogyRouter(db));
   const get = (table, id) => {
@@ -49,12 +51,13 @@ export function createApp(db, options = {}) {
     ),
   );
   app.get('/api/projects/:id', (req, res) => res.json(get('projects', req.params.id)));
+  const completionColumn = `CASE WHEN l.status='completed' THEN coalesce((SELECT origin FROM lesson_completions c WHERE c.lesson_id=l.id),CASE WHEN EXISTS(SELECT 1 FROM lesson_versions v WHERE v.lesson_id=l.id AND v.status='approved') THEN 'eduforge' END) END AS completion_origin, `;
   app.get('/api/projects/:id/lessons', (req, res) => {
     get('projects', req.params.id);
     res.json(
       db
         .prepare(
-          'SELECT l.*, (SELECT status FROM lesson_versions v WHERE v.lesson_id=l.id ORDER BY version DESC LIMIT 1) AS guide_status FROM lessons l WHERE project_id = ? ORDER BY number',
+          `SELECT l.*, ${completionColumn}(SELECT status FROM lesson_versions v WHERE v.lesson_id=l.id ORDER BY version DESC LIMIT 1) AS guide_status FROM lessons l WHERE project_id = ? ORDER BY number`,
         )
         .all(req.params.id),
     );
@@ -63,7 +66,7 @@ export function createApp(db, options = {}) {
     res.json(
       db
         .prepare(
-          'SELECT l.*, p.name AS project_name, (SELECT status FROM lesson_versions v WHERE v.lesson_id=l.id ORDER BY version DESC LIMIT 1) AS guide_status FROM lessons l JOIN projects p ON p.id=l.project_id ORDER BY p.name, l.number',
+          `SELECT l.*, ${completionColumn}p.name AS project_name, (SELECT status FROM lesson_versions v WHERE v.lesson_id=l.id ORDER BY version DESC LIMIT 1) AS guide_status FROM lessons l JOIN projects p ON p.id=l.project_id ORDER BY p.name, l.number`,
         )
         .all(),
     ),
@@ -115,6 +118,10 @@ export function createApp(db, options = {}) {
     });
   app.use((req, res) => res.status(404).json({ error: { message: 'Endpoint não encontrado.' } }));
   app.use((error, req, res, next) => {
+    if (error.code?.startsWith('LIMIT_'))
+      return res
+        .status(400)
+        .json({ error: { message: 'Upload inválido. Envie somente um arquivo de até 10 MB.' } });
     if (error.name === 'ZodError')
       return res.status(400).json({
         error: {

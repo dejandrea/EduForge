@@ -4,15 +4,42 @@ import {
   aiGenerateSchema,
   aiConnectionSchema,
   guideSchema,
+  memoryAnalysisSchema,
+  memorySchema,
 } from '@eduforge/shared';
 import { createProviders, AIError, outputSchema, safeError } from './providers.js';
 import { generationContext, buildPrompt } from './context.js';
 import { insertGuideDraft } from '../guides.js';
+import {
+  memoryAnalysisContext,
+  memoryAnalysisPrompt,
+  insertMemoryDraft,
+  validateMemory,
+} from '../materials/memory.js';
 
 export function createAIService(
   db,
-  { providers = createProviders(), clock = () => new Date() } = {},
+  { providers = createProviders(), clock = () => new Date(), kind = 'guide' } = {},
 ) {
+  const isMemory = kind === 'memory';
+  // Both queues share the task contract and execution logic. Identifiers are fixed here,
+  // never derived from request data; bound parameter values are not rewritten.
+  const identifiers = isMemory
+    ? {
+        ai_jobs: 'memory_analysis_jobs',
+        ai_attempts: 'memory_analysis_attempts',
+        ai_usage: 'memory_analysis_usage',
+        result_guide_id: 'result_memory_id',
+      }
+    : {};
+  const prepare = (sql) =>
+    db.prepare(
+      sql.replace(
+        /\b(ai_jobs|ai_attempts|ai_usage|result_guide_id)\b/g,
+        (name) => identifiers[name] || name,
+      ),
+    );
+  const responseSchema = isMemory ? memorySchema : outputSchema;
   const now = () => clock().toISOString();
   function transaction(fn) {
     db.exec('BEGIN IMMEDIATE');
@@ -27,12 +54,12 @@ export function createAIService(
   }
   const settings = () =>
     aiSettingsSchema.parse(
-      JSON.parse(db.prepare('SELECT data FROM ai_settings WHERE id=1').get().data),
+      JSON.parse(prepare('SELECT data FROM ai_settings WHERE id=1').get().data),
     );
   const jobColumns =
     'id,type,status,lesson_id,source_guide_id,template_version_id,roadmap_version_id,provider,model,progress,attempts,cancel_requested,error_code,error_message,reserved_usd,budget_charge_usd,budget_state,result_guide_id,created_at,started_at,finished_at';
   function getJob(id) {
-    const job = db.prepare(`SELECT ${jobColumns} FROM ai_jobs WHERE id=?`).get(id);
+    const job = prepare(`SELECT ${jobColumns} FROM ai_jobs WHERE id=?`).get(id);
     if (!job) throw Object.assign(new Error('Tarefa não encontrada.'), { status: 404 });
     return job;
   }
@@ -49,13 +76,16 @@ export function createAIService(
     const month = now().slice(0, 7);
     const charged = db
       .prepare(
-        `SELECT coalesce(sum(budget_charge_usd),0) AS total FROM ai_jobs
-      WHERE substr(created_at,1,7)=? OR budget_state IN ('reserved','uncertain')`,
+        `SELECT coalesce(sum(budget_charge_usd),0) AS total FROM (
+      SELECT budget_charge_usd,budget_state,created_at FROM ai_jobs UNION ALL SELECT budget_charge_usd,budget_state,created_at FROM memory_analysis_jobs
+    ) WHERE substr(created_at,1,7)=? OR budget_state IN ('reserved','uncertain')`,
       )
       .get(month).total;
     const spent = db
       .prepare(
-        'SELECT sum(cost_usd) AS total,count(*) AS count,sum(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS unknown FROM ai_usage WHERE substr(created_at,1,7)=?',
+        `SELECT sum(cost_usd) AS total,sum(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS unknown FROM (
+      SELECT cost_usd,created_at FROM ai_usage UNION ALL SELECT cost_usd,created_at FROM memory_analysis_usage
+    ) WHERE substr(created_at,1,7)=?`,
       )
       .get(month);
     return {
@@ -78,7 +108,7 @@ export function createAIService(
   }
   function saveSettings(input) {
     const data = aiSettingsSchema.parse(input);
-    db.prepare('UPDATE ai_settings SET data=?,updated_at=? WHERE id=1').run(
+    prepare('UPDATE ai_settings SET data=?,updated_at=? WHERE id=1').run(
       JSON.stringify(data),
       now(),
     );
@@ -102,12 +132,12 @@ export function createAIService(
     };
   }
   function enqueue(lessonId, input) {
-    const request = aiGenerateSchema.parse(input);
+    const request = (isMemory ? memoryAnalysisSchema : aiGenerateSchema).parse(input);
     const hash = createHash('sha256').update(JSON.stringify({ lessonId, request })).digest('hex');
     return transaction(() => {
-      const existing = db
-        .prepare('SELECT id,request_hash FROM ai_jobs WHERE request_key=?')
-        .get(request.request_key);
+      const existing = prepare('SELECT id,request_hash FROM ai_jobs WHERE request_key=?').get(
+        request.request_key,
+      );
       if (existing) {
         if (existing.request_hash !== hash)
           throw new AIError(
@@ -131,15 +161,19 @@ export function createAIService(
           'PRICE',
           'Informe os preços de entrada e saída e a data de atualização para reservar o orçamento.',
         );
-      const context = generationContext(db, lessonId, request);
-      const prompt = buildPrompt(context);
+      const context = isMemory
+        ? memoryAnalysisContext(db, lessonId, request)
+        : generationContext(db, lessonId, request);
+      const prompt = isMemory ? memoryAnalysisPrompt(context) : buildPrompt(context);
       if (Buffer.byteLength(prompt, 'utf8') > 200000)
         throw new AIError(
           'CONTEXT_LIMIT',
           'O contexto excede o limite local de 200 KB. Reduza as instruções ou o conteúdo de referência.',
         );
       const inputBound =
-        Buffer.byteLength(prompt, 'utf8') + Buffer.byteLength(JSON.stringify(outputSchema)) + 4096;
+        Buffer.byteLength(prompt, 'utf8') +
+        Buffer.byteLength(JSON.stringify(responseSchema)) +
+        4096;
       const reserve =
         (inputBound * Math.max(config.input_per_million, config.cached_input_per_million ?? 0) +
           config.max_output_tokens * config.output_per_million) /
@@ -156,18 +190,18 @@ export function createAIService(
         exchange_rate_brl: settings().exchange_rate_brl,
         exchange_rate_date: settings().exchange_rate_date,
       };
-      db.prepare(
+      prepare(
         `INSERT INTO ai_jobs (id,request_key,request_hash,type,status,lesson_id,source_guide_id,template_version_id,roadmap_version_id,provider,model,input,config,reserved_usd,budget_charge_usd,budget_state,created_at)
         VALUES (?,?,?,?,'pending',?,?,?,?,?,?,?,?,?,?,'reserved',?)`,
       ).run(
         id,
         request.request_key,
         hash,
-        request.section_id ? 'regenerate' : 'generate',
+        isMemory ? 'analysis' : request.section_id ? 'regenerate' : 'generate',
         lessonId,
         request.source_guide_id || null,
-        request.template_version_id,
-        request.roadmap_version_id,
+        request.template_version_id || null,
+        request.roadmap_version_id || null,
         request.provider,
         request.model,
         JSON.stringify({ request, context, prompt }),
@@ -183,25 +217,25 @@ export function createAIService(
     return transaction(() => {
       const job = getJob(id);
       if (job.status === 'pending')
-        db.prepare(
+        prepare(
           "UPDATE ai_jobs SET status='cancelled',cancel_requested=1,finished_at=?,budget_state='released',budget_charge_usd=0 WHERE id=?",
         ).run(now(), id);
       else if (job.status === 'running')
-        db.prepare('UPDATE ai_jobs SET cancel_requested=1 WHERE id=?').run(id);
+        prepare('UPDATE ai_jobs SET cancel_requested=1 WHERE id=?').run(id);
       return getJob(id);
     });
   }
   function recoverInterrupted() {
     return transaction(() => {
-      const running = db.prepare("SELECT id FROM ai_jobs WHERE status='running'").all();
+      const running = prepare("SELECT id FROM ai_jobs WHERE status='running'").all();
       for (const { id } of running) {
-        db.prepare(
+        prepare(
           "UPDATE ai_jobs SET status='failed',error_code='INTERRUPTED',error_message='Execução interrompida. Não houve repetição automática; confira o consumo do provedor antes de gerar novamente.',finished_at=?,budget_state='uncertain' WHERE id=?",
         ).run(now(), id);
-        db.prepare(
+        prepare(
           "UPDATE ai_attempts SET status='failed',finished_at=?,error_code='INTERRUPTED' WHERE job_id=?",
         ).run(now(), id);
-        const row = db.prepare('SELECT * FROM ai_jobs WHERE id=?').get(id);
+        const row = prepare('SELECT * FROM ai_jobs WHERE id=?').get(id);
         recordUsage(row, JSON.parse(row.config), null, null);
       }
       return running.length;
@@ -220,7 +254,7 @@ export function createAIService(
     );
   }
   function recordUsage(job, config, usage, cost) {
-    db.prepare('INSERT OR IGNORE INTO ai_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(
+    prepare('INSERT OR IGNORE INTO ai_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(
       randomUUID(),
       job.id,
       job.provider,
@@ -237,18 +271,20 @@ export function createAIService(
   }
   async function processNext({ signal, owner } = {}) {
     const job = transaction(() => {
-      if (owner && db.prepare('SELECT owner FROM ai_worker_lock WHERE id=1').get()?.owner !== owner)
+      if (owner && prepare('SELECT owner FROM ai_worker_lock WHERE id=1').get()?.owner !== owner)
         return null;
-      const row = db
-        .prepare("SELECT * FROM ai_jobs WHERE status='pending' ORDER BY created_at,id LIMIT 1")
-        .get();
+      const row = prepare(
+        "SELECT * FROM ai_jobs WHERE status='pending' ORDER BY created_at,id LIMIT 1",
+      ).get();
       if (!row || signal?.aborted) return null;
-      db.prepare(
+      prepare(
         "UPDATE ai_jobs SET status='running',started_at=?,attempts=1,progress=10 WHERE id=? AND status='pending'",
       ).run(now(), row.id);
-      db.prepare(
-        "INSERT INTO ai_attempts (id,job_id,status,started_at) VALUES (?,?,'running',?)",
-      ).run(randomUUID(), row.id, now());
+      prepare("INSERT INTO ai_attempts (id,job_id,status,started_at) VALUES (?,?,'running',?)").run(
+        randomUUID(),
+        row.id,
+        now(),
+      );
       return row;
     });
     if (!job) return null;
@@ -262,9 +298,7 @@ export function createAIService(
       ...(signal ? [signal] : []),
     ]);
     const poll = setInterval(() => {
-      if (
-        db.prepare('SELECT cancel_requested FROM ai_jobs WHERE id=?').get(job.id)?.cancel_requested
-      )
+      if (prepare('SELECT cancel_requested FROM ai_jobs WHERE id=?').get(job.id)?.cancel_requested)
         cancelController.abort();
     }, 200);
     const started = Date.now();
@@ -273,16 +307,15 @@ export function createAIService(
       output = null,
       failure = null;
     try {
-      generationContext(db, job.lesson_id, input.request);
-      if (
-        db.prepare('SELECT cancel_requested FROM ai_jobs WHERE id=?').get(job.id).cancel_requested
-      )
+      if (isMemory) memoryAnalysisContext(db, job.lesson_id, input.request);
+      else generationContext(db, job.lesson_id, input.request);
+      if (prepare('SELECT cancel_requested FROM ai_jobs WHERE id=?').get(job.id).cancel_requested)
         throw new AIError('CANCELLED', 'Tarefa cancelada antes da chamada.');
       const models = await providers[job.provider].listModels(combined);
       if (!models.includes(job.model))
         throw new AIError('MODEL', 'O modelo não está disponível para esta credencial.');
       combined.throwIfAborted();
-      db.prepare('UPDATE ai_jobs SET progress=30 WHERE id=?').run(job.id);
+      prepare('UPDATE ai_jobs SET progress=30 WHERE id=?').run(job.id);
       paidStarted = true;
       const result = await providers[job.provider].generate({
         model: job.model,
@@ -290,23 +323,27 @@ export function createAIService(
         max_output_tokens: config.max_output_tokens,
         temperature: config.temperature,
         signal: combined,
+        schema: responseSchema,
       });
       usage = result.usage;
-      output = outputSchema.parse(
+      output = responseSchema.parse(
         typeof result.output === 'string' ? JSON.parse(result.output) : result.output,
       );
-      const targets = input.context.section_id
-        ? input.context.template.sections.filter((s) => s.id === input.context.section_id)
-        : input.context.template.sections;
-      if (
-        JSON.stringify(output.content.map((s) => s.section_id)) !==
-          JSON.stringify(targets.map((s) => s.id)) ||
-        targets.some((s, i) => !s.optional && !output.content[i].content.trim())
-      )
-        throw new AIError(
-          'INCOMPLETE',
-          'A resposta não contém todas as seções solicitadas, na ordem, com conteúdo obrigatório.',
-        );
+      if (isMemory) validateMemory(db, job.lesson_id, output, input.context.excerpts);
+      else {
+        const targets = input.context.section_id
+          ? input.context.template.sections.filter((s) => s.id === input.context.section_id)
+          : input.context.template.sections;
+        if (
+          JSON.stringify(output.content.map((s) => s.section_id)) !==
+            JSON.stringify(targets.map((s) => s.id)) ||
+          targets.some((s, i) => !s.optional && !output.content[i].content.trim())
+        )
+          throw new AIError(
+            'INCOMPLETE',
+            'A resposta não contém todas as seções solicitadas, na ordem, com conteúdo obrigatório.',
+          );
+      }
     } catch (error) {
       usage = usage || error.usage || null;
       failure = timeout.aborted
@@ -319,7 +356,7 @@ export function createAIService(
       clearInterval(poll);
     }
     return transaction(() => {
-      if (owner && db.prepare('SELECT owner FROM ai_worker_lock WHERE id=1').get()?.owner !== owner)
+      if (owner && prepare('SELECT owner FROM ai_worker_lock WHERE id=1').get()?.owner !== owner)
         return getJob(job.id);
       const current = getJob(job.id);
       const cancelled =
@@ -327,16 +364,20 @@ export function createAIService(
       const cost = costOf(config, usage);
       let resultId = null;
       if (!cancelled && !failure) {
-        const data = guideSchema.parse({
-          template_version_id: job.template_version_id,
-          roadmap_version_id: job.roadmap_version_id,
-          content: input.context.section_id
-            ? input.context.source.data.content.map((s) =>
-                s.section_id === input.context.section_id ? output.content[0] : s,
-              )
-            : output.content,
-        });
-        resultId = insertGuideDraft(db, job.lesson_id, data);
+        if (isMemory)
+          resultId = insertMemoryDraft(db, job.lesson_id, output, input.context.excerpts);
+        else {
+          const data = guideSchema.parse({
+            template_version_id: job.template_version_id,
+            roadmap_version_id: job.roadmap_version_id,
+            content: input.context.section_id
+              ? input.context.source.data.content.map((s) =>
+                  s.section_id === input.context.section_id ? output.content[0] : s,
+                )
+              : output.content,
+          });
+          resultId = insertGuideDraft(db, job.lesson_id, data);
+        }
       }
       const status = cancelled ? 'cancelled' : failure ? 'failed' : 'completed';
       const safe = cancelled
@@ -348,7 +389,7 @@ export function createAIService(
           }
         : failure;
       const budgetState = cost !== null ? 'settled' : paidStarted ? 'uncertain' : 'released';
-      db.prepare(
+      prepare(
         'UPDATE ai_jobs SET status=?,progress=?,finished_at=?,error_code=?,error_message=?,result_guide_id=?,budget_charge_usd=?,budget_state=? WHERE id=?',
       ).run(
         status,
@@ -361,7 +402,7 @@ export function createAIService(
         budgetState,
         job.id,
       );
-      db.prepare(
+      prepare(
         'UPDATE ai_attempts SET status=?,finished_at=?,duration_ms=?,error_code=? WHERE job_id=?',
       ).run(status, now(), Date.now() - started, safe?.code || null, job.id);
       if (paidStarted) recordUsage(job, config, usage, cost);
@@ -369,10 +410,9 @@ export function createAIService(
     });
   }
   function usageHistory() {
-    return db
-      .prepare(
-        'SELECT u.*, j.status,j.type,j.result_guide_id FROM ai_usage u JOIN ai_jobs j ON j.id=u.job_id ORDER BY u.created_at DESC LIMIT 200',
-      )
+    return prepare(
+      'SELECT u.*, j.status,j.type,j.result_guide_id FROM ai_usage u JOIN ai_jobs j ON j.id=u.job_id ORDER BY u.created_at DESC LIMIT 200',
+    )
       .all()
       .map(({ price_snapshot, ...row }) => ({
         ...row,
@@ -397,11 +437,19 @@ export function createAIService(
     usageHistory,
     listJobs: (lessonId) =>
       lessonId
-        ? db
-            .prepare(
-              `SELECT ${jobColumns} FROM ai_jobs WHERE lesson_id=? ORDER BY created_at DESC LIMIT 50`,
-            )
-            .all(lessonId)
-        : db.prepare(`SELECT ${jobColumns} FROM ai_jobs ORDER BY created_at DESC LIMIT 100`).all(),
+        ? prepare(
+            `SELECT ${jobColumns} FROM ai_jobs WHERE lesson_id=? ORDER BY created_at DESC LIMIT 50`,
+          ).all(lessonId)
+        : prepare(`SELECT ${jobColumns} FROM ai_jobs ORDER BY created_at DESC LIMIT 100`).all(),
+  };
+}
+
+export function createAIWorkerService(db, options = {}) {
+  const guides = createAIService(db, options),
+    memories = createAIService(db, { ...options, kind: 'memory' });
+  return {
+    recoverInterrupted: () => guides.recoverInterrupted() + memories.recoverInterrupted(),
+    processNext: async (options) =>
+      (await guides.processNext(options)) || (await memories.processNext(options)),
   };
 }
