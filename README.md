@@ -59,7 +59,13 @@ A próxima ação e o progresso são calculados dos registros salvos. Quando hou
 
 Na galeria, selecione uma ou várias evidências, consulte a seção do guia, escolha uma etapa identificada por marcadores ou confirme um nome quando o texto for livre. **Confirmar vínculos selecionados** grava o lote em uma única transação. É possível distribuir registros entre etapas, consultar vínculos pendentes e corrigir um vínculo com motivo preservado no histórico. Os registros ficam em uma coluna, com mais largura para ler as etapas do guia; em telas pequenas os painéis se empilham.
 
-Aulas sem programação podem registrar **não aplicável** com justificativa persistida. Isso não aprova nem remove código existente. A etapa Documento final apenas consulta os materiais e pendências: **DOCX ainda não é exportado**. Ver [relatório da Fase 3D](docs/PHASE_3D_REPORT.md).
+Aulas sem programação podem registrar **não aplicável** com justificativa persistida. Isso não aprova nem remove código existente. Ver [relatório da Fase 3D](docs/PHASE_3D_REPORT.md).
+
+## Documentos pedagógicos — Fase 4A
+
+Na edição do projeto, configure **Modelos e identidade visual**, conecte o Google pelo fluxo OAuth do próprio EduForge e autorize o modelo/pasta. Na Central, **Documento final** permite selecionar fontes aprovadas, validar uma prévia, gerar uma cópia no Google Docs, baixar o DOCX e registrar revisão humana. Configurações e fontes são versionadas; falhas parciais têm retomada explícita.
+
+A configuração OAuth usa variáveis backend documentadas em `.env.example`; abra o app em `http://127.0.0.1:5173`. **A aceitação da 4A depende do piloto real e da revisão visual da conversão. A 4B ainda não começou.** Instruções, limites e estado do piloto Frogger: [relatório da Fase 4](docs/PHASE_4_REPORT.md).
 
 ## Dados e verificação
 

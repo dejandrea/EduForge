@@ -21,6 +21,7 @@ import ProjectReferences from '../src/pages/ProjectReferences';
 import ContextSelection, { emptySelection } from '../src/components/ContextSelection';
 import CodeWorkspace, { codeProgress } from '../src/pages/CodeWorkspace';
 import Production from '../src/pages/Production';
+import MaterialSettings from '../src/components/MaterialSettings';
 
 // Load the server with Node so Vite does not bundle native SQLite for the DOM environment.
 const require = createRequire(import.meta.url);
@@ -187,6 +188,32 @@ function page(path, route, element) {
     </MemoryRouter>,
   );
 }
+test('materiais do projeto: OAuth ausente fica explícito e salvar preserva versões anteriores', async () => {
+  page('/settings', '/settings', <MaterialSettings projectId={project.id} />);
+  await screen.findByLabelText('Link do documento-base do Google Docs');
+  expect(
+    screen.getByRole('button', { name: 'Conectar Google e autorizar arquivos/pastas' }).disabled,
+  ).toBe(true);
+  fireEvent.change(screen.getByLabelText('Link do documento-base do Google Docs'), {
+    target: { value: 'https://docs.google.com/document/d/model/edit' },
+  });
+  fireEvent.change(screen.getByLabelText('Nome do modelo'), {
+    target: { value: 'Modelo Frogger' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar nova versão das configurações' }));
+  await screen.findByText(/Versão 1\./);
+  fireEvent.change(screen.getByLabelText('Nome do modelo'), {
+    target: { value: 'Modelo atualizado' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar nova versão das configurações' }));
+  await screen.findByText(/Versão 2\./);
+  const versions = db
+    .prepare('SELECT data FROM project_material_settings WHERE project_id=? ORDER BY version')
+    .all(project.id)
+    .map((r) => JSON.parse(r.data));
+  expect(versions.map((s) => s.template_name)).toEqual(['Modelo Frogger', 'Modelo atualizado']);
+  expect(providerCalls).toEqual({ catalog: 0, generate: 0 });
+});
 async function approvedRoadmap() {
   const row = await request(`/projects/${project.id}/roadmaps`, { title: 'Roteiro aprovado' });
   const res = await fetch(`/api/roadmaps/${row.id}/items`, {
@@ -460,7 +487,7 @@ test('central restaura seleção e progresso após remontar e preserva não apli
   expect(screen.getAllByText('Não aplicável').length).toBe(2);
   expect(screen.getByLabelText('Aula para produção').value).toBe(f.lesson.id);
   fireEvent.click(screen.getByRole('button', { name: 'Abrir Documento final' }));
-  expect(await screen.findByText(/Nenhum DOCX foi criado/)).toBeTruthy();
+  expect(await screen.findByText('Nenhum documento gerado para esta aula.')).toBeTruthy();
   expect(codeService.revision(f.revision.id).status).toBe('approved');
 });
 

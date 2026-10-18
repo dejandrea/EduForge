@@ -8,6 +8,7 @@ import { createCodeService } from './code/service.js';
 import { codeAIRouter } from './code/ai-routes.js';
 import { codeRouter } from './code/routes.js';
 import { productionRouter } from './production.js';
+import { documentRouter } from './documents/routes.js';
 export function createApp(db, options = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -24,6 +25,9 @@ export function createApp(db, options = {}) {
   });
   app.use(express.json({ limit: '2mb' }));
   app.locals.code = createCodeService(db, options.code);
+  const documents = documentRouter(db, app.locals.code, options.documents);
+  app.locals.documents = documents.service;
+  app.use('/api', documents.router);
   app.use('/api', codeRouter(db, app.locals.code));
   app.use('/api', productionRouter(db, app.locals.code));
   app.use('/api', codeAIRouter(db, app.locals.code, options.ai));

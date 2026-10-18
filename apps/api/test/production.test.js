@@ -345,7 +345,7 @@ test('correções preservam histórico, evidência e guia; não aplicável persi
       .get(f.lesson.id).requires_code,
     0,
   );
-  assert.equal(reopened.prepare('SELECT count(*) n FROM migrations').get().n, 8);
+  assert.equal(reopened.prepare('SELECT count(*) n FROM migrations').get().n, 9);
   reopened.close();
   await f.request(
     `/lessons/${f.lesson.id}/code-decision`,

@@ -79,6 +79,10 @@ export function productionRouter(db, code) {
           'SELECT rowid,* FROM lesson_code_decisions WHERE lesson_id=? ORDER BY rowid DESC LIMIT 1',
         )
         .get(lesson.id) || null;
+    const documents = db
+      .prepare('SELECT version,status,review_status,snapshot FROM document_jobs WHERE lesson_id=?')
+      .all(lesson.id)
+      .map((d) => ({ ...d, snapshot: JSON.parse(d.snapshot) }));
     const progress = productionProgress({
       roadmap,
       guide,
@@ -88,6 +92,7 @@ export function productionRouter(db, code) {
       jobs,
       decision,
       preparations,
+      documents,
     });
     res.json({
       lesson,
@@ -103,6 +108,7 @@ export function productionRouter(db, code) {
       decision,
       progress,
       running:
+        documents.some((d) => ['pending', 'running'].includes(d.status)) ||
         guideJobs.length > 0 ||
         jobs.some((j) => ['pending', 'running'].includes(j.status)) ||
         preparations.some((p) => ['pending', 'running'].includes(p.status)),

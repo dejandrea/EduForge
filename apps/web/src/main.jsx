@@ -21,6 +21,7 @@ import ProjectMemory from './pages/ProjectMemory';
 import CodeWorkspace from './pages/CodeWorkspace';
 const Production = React.lazy(() => import('./pages/Production'));
 import RecordForm from './components/RecordForm';
+import MaterialSettings from './components/MaterialSettings';
 import { api } from './api';
 import './components/Layout.css';
 import './pages/Workspace.css';
@@ -183,13 +184,16 @@ function ProjectForm() {
   const state = useData(id ? `/projects/${id}` : '/health');
   if (id && !state.data) return <Notice state={state} />;
   return (
-    <RecordForm
-      key={id || 'new'}
-      kind="project"
-      initial={id ? state.data : blankProject}
-      endpoint={id ? `/projects/${id}` : '/projects'}
-      back={id ? `/projects/${id}` : '/projects'}
-    />
+    <>
+      <RecordForm
+        key={id || 'new'}
+        kind="project"
+        initial={id ? state.data : blankProject}
+        endpoint={id ? `/projects/${id}` : '/projects'}
+        back={id ? `/projects/${id}` : '/projects'}
+      />
+      {id && <MaterialSettings projectId={id} />}
+    </>
   );
 }
 function LessonForm() {

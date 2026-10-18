@@ -37,6 +37,7 @@ export function productionProgress({
   jobs = [],
   decision,
   preparations = [],
+  documents = [],
 }) {
   const required = decision?.requires_code !== 0;
   const records = evidence.filter((e) => e.status !== 'rejected');
@@ -58,6 +59,12 @@ export function productionProgress({
     jobs.some((j) => ['pending', 'running'].includes(j.status)) ||
     preparations.some((p) => ['pending', 'running'].includes(p.status));
   const evidenceReady = tests.length > 0 && !unlinked.length && !pending.length;
+  const matchingDocuments = documents.filter(
+    (d) =>
+      d.snapshot.guide_id === guide?.id &&
+      (d.snapshot.revision_id || null) === (revision?.id || null),
+  );
+  const latestDocument = [...matchingDocuments].sort((a, b) => b.version - a.version)[0];
   const states = [
     roadmap
       ? roadmap.status === 'approved'
@@ -85,7 +92,13 @@ export function productionProgress({
             : revision
               ? 'Não iniciada'
               : 'Bloqueada por pendência real',
-    'Bloqueada por pendência real',
+    latestDocument?.status === 'completed' && latestDocument.review_status === 'approved'
+      ? 'Concluída'
+      : latestDocument?.status === 'completed'
+        ? 'Aguardando revisão'
+        : ['pending', 'running'].includes(latestDocument?.status)
+          ? 'Em andamento'
+          : 'Bloqueada por pendência real',
   ];
   let next;
   if (!roadmap || roadmap.status !== 'approved') next = { stage: 1, label: 'Revisar planejamento' };
@@ -111,6 +124,6 @@ export function productionProgress({
     covered: records.length - unlinked.length,
     pending: pending.length,
     materials_ready: states.slice(0, 4).every((s) => ['Concluída', 'Não aplicável'].includes(s)),
-    document_available: false,
+    document_available: matchingDocuments.some((d) => d.status === 'completed'),
   };
 }

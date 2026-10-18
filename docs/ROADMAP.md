@@ -34,9 +34,13 @@ Implementada a organização em Visão geral, Código, Evidências e Histórico,
 
 Implementada a central `/production`, com projeto/aula, linha do tempo e próxima ação derivadas de dados existentes. Reutiliza planejamento, guias, código, geração de IA e testes; acrescenta organização de evidências por etapas reais do guia, seleção múltipla e vínculos transacionais em lote, prevenção de duplicatas e revogação auditada. Código não aplicável é uma decisão persistida com justificativa. Prévia dos materiais finais sem gerar DOCX. Galeria em uma coluna e guia com área ampliada. Validação automatizada e pendências de inspeção visual descritas em `PHASE_3D_REPORT.md`.
 
-## Fase 4 — Documentos
+## Fase 4A — Documentos pedagógicos
 
-Worker Python com python-docx, templates, imagens vinculadas e revisão visual dos documentos exportados.
+Implementação local com configurações versionadas por projeto/aula, OAuth Google, validação de modelo/pasta, cópia nativa, preenchimento OOXML com textos/código/capturas, exportação DOCX, snapshots e retomada conservadora. Reutiliza Express/SQLite/armazenamento existentes; não acrescenta worker Python. Aceitação pendente de conexão OAuth real e piloto visual. Ver `PHASE_4_REPORT.md`.
+
+## Fase 4B — Apresentações
+
+Não iniciada. Após validar 4A: apresentações PowerPoint editáveis, biblioteca de imagens, logo, mascote, identidade por projeto e personalização por prompt, conforme `prompts/Fase 4.md`.
 
 ## Fase 5 — Materiais e integrações
 
