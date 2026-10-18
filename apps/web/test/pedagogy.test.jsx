@@ -31,7 +31,7 @@ const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 configure({ asyncUtilTimeout: 5000 });
 
-let db, server, project, request, aiService, providerCalls, codeFolder, codeService;
+let db, server, project, request, aiService, providerCalls, codeFolder, codeService, aiCodeService;
 const nativeFetch = globalThis.fetch;
 beforeEach(async () => {
   db = openDatabase(':memory:');
@@ -44,6 +44,26 @@ beforeEach(async () => {
     },
     generate: async ({ prompt }) => {
       providerCalls.generate++;
+      if (prompt.includes('CONTEXTO_CODIGO: ')) {
+        const context = JSON.parse(prompt.split('CONTEXTO_CODIGO: ')[1]);
+        return {
+          output: {
+            summary: 'Evolucao simulada da aula',
+            changes: [
+              {
+                path: context.files[0].path,
+                operation: 'modify',
+                content: 'export const frog = 2;',
+                justification: 'Mudanca prevista no guia.',
+                related_sections: [context.guide.sections[0].id],
+              },
+            ],
+            technical_notes: ['Sem execucao de codigo.'],
+            manual_checks: ['Conferir no ambiente original.'],
+          },
+          usage: { input_tokens: 100, output_tokens: 200, cached_tokens: 0 },
+        };
+      }
       const sections = JSON.parse(prompt.match(/SEÇÕES SOLICITADAS: (.*)\n/)[1]);
       return {
         output: {
@@ -71,6 +91,11 @@ beforeEach(async () => {
     },
   });
   codeService = app.locals.code;
+  aiCodeService = createAIService(db, {
+    providers,
+    kind: 'code',
+    codeOptions: { storageRoot: codeFolder },
+  });
   server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -173,6 +198,112 @@ test('código e capturas prepara cópia simulada, inspeciona, cria revisão e ap
   );
   expect(db.prepare("SELECT count(*) n FROM code_evidence WHERE result='passed'").get().n).toBe(0);
   expect(providerCalls.generate).toBe(0);
+});
+
+test('evolução com IA exige prévia e consentimento; preserva edição manual e cria somente rascunho', async () => {
+  aiService.saveSettings({
+    ...aiService.settings(),
+    model: 'mock-education',
+    monthly_limit_usd: 1,
+    models: [
+      {
+        provider: 'openai',
+        id: 'mock-education',
+        label: 'Modelo simulado',
+        structured_output: true,
+        max_output_tokens: 1000,
+        temperature: null,
+        input_per_million: 1,
+        output_per_million: 2,
+        cached_input_per_million: 0,
+        price_date: '2026-10-01',
+      },
+    ],
+  });
+  const lesson = await request(`/projects/${project.id}/lessons`, {
+      number: 3,
+      title: 'Aula de codigo',
+      duration: 60,
+    }),
+    ref = await request(`/projects/${project.id}/references`, {
+      kind: 'github',
+      title: 'Projeto',
+      url: 'https://github.com/example/course',
+      branch: 'main',
+      commit_sha: null,
+    });
+  const prep = codeService.enqueue(lesson.id, {
+    reference_id: ref.id,
+    branch: 'main',
+    objective: 'Evoluir a aula',
+    confirm: true,
+  });
+  await codeService.start(prep.id);
+  const original = codeService.detail(prep.id).revisions[0];
+  const roadmap = await approvedRoadmap(),
+    templates = await request('/templates'),
+    template = (await request(`/templates/${templates[0].id}/versions`)).find(
+      (t) => t.status === 'approved',
+    ),
+    sections = template.data.sections.filter((s) => s.enabled);
+  const guide = await request(`/lessons/${lesson.id}/guides`, {
+    template_version_id: template.id,
+    roadmap_version_id: roadmap.id,
+    content: sections.map((s) => ({
+      section_id: s.id,
+      content: 'Evoluir somente o movimento previsto para esta aula.',
+    })),
+  });
+  page(`/lessons/${lesson.id}/code`, '/lessons/:lessonId/code', <CodeWorkspace />);
+  fireEvent.click(
+    await screen.findByRole('button', { name: /Evoluir a aula.*Pronta para inspeção/ }),
+  );
+  fireEvent.click(
+    await screen.findByText('Gerar evolução do código com IA', { selector: 'summary' }),
+  );
+  await screen.findByRole('option', { name: /Guia v1/ });
+  fireEvent.change(await screen.findByLabelText('Guia pedagógico para evolução do código'), {
+    target: { value: guide.id },
+  });
+  fireEvent.click(await screen.findByRole('checkbox', { name: sections[0].title, exact: true }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Enviar para leitura', exact: true }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Autorizar alteração', exact: true }));
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Revisar envio e estimar custo sem chamar IA' }),
+  );
+  await screen.findByRole('heading', { name: 'Prévia local do envio' });
+  expect(providerCalls.generate).toBe(0);
+  expect(providerCalls.catalog).toBe(0);
+  expect(screen.getByRole('button', { name: 'Gerar proposta de código com IA' }).disabled).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByRole('checkbox', { name: /Autorizo o envio destes arquivos/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Gerar proposta de código com IA' }));
+  await waitFor(() =>
+    expect(
+      db.prepare("SELECT count(*) n FROM code_generation_jobs WHERE status='pending'").get().n,
+    ).toBe(1),
+  );
+  const result = await aiCodeService.processNext();
+  expect(result.status).toBe('completed');
+  fireEvent.change(screen.getByLabelText('Conteúdo proposto'), {
+    target: { value: 'EDIÇÃO MANUAL A PRESERVAR' },
+  });
+  fireEvent.click(await screen.findByRole('button', { name: 'Revisar proposta' }));
+  const accept = await screen.findByRole('button', {
+    name: 'Aceitar proposta e criar revisão em rascunho',
+  });
+  expect(accept.disabled).toBe(true);
+  expect(screen.getByLabelText('Conteúdo proposto').value).toBe('EDIÇÃO MANUAL A PRESERVAR');
+  fireEvent.click(screen.getByRole('button', { name: 'Descartar proposta não gravada' }));
+  fireEvent.change(screen.getByLabelText('Código proposto: src/game.js'), {
+    target: { value: 'export const frog = 2; // ajuste humano' },
+  });
+  fireEvent.click(accept);
+  await screen.findByRole('heading', { name: 'Arquivos da revisão 2' });
+  expect(db.prepare('SELECT status FROM code_revisions WHERE number=2').get().status).toBe('draft');
+  expect(codeService.revision(original.id).digest).toBe(original.digest);
+  expect(providerCalls.generate).toBe(1);
 });
 
 test('referências são cadastradas sem leitura remota ou chamada de IA', async () => {

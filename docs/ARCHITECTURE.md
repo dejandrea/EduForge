@@ -148,3 +148,14 @@ Execução e captura automática respondem 409: não existe executor/navegador i
 `CodeWorkspace` e os componentes `CodeFiles`, `CodeEvidence`, `CodeGuideLinks` apresentam histórico, propostas, comparação por arquivo, evidências e associações. Os vínculos apontam para guia/seção/etapa e revisão exatos, independentemente de novas versões. `Guides.jsx` consulta os vínculos sem alterar o conteúdo do guia. Nenhuma infraestrutura adicional de IA foi criada.
 
 Detalhes, endpoints e limites: [PHASE_3_REPORT.md](PHASE_3_REPORT.md). Backup passa a incluir `storage/code` junto do banco e materiais. Não há coleta automática de blobs órfãos ou limpeza de temporários deixados por queda abrupta.
+
+
+## Propostas de código com IA — Fase 3B
+
+Migration 007 acrescenta `code_proposals` e persistência do tipo `code_generation_*`, compatível com o contrato de tarefas existente. `ai/service.js` atende guia, memória e código; `createAIWorkerService` processa todos sob a mesma trava/heartbeat. Reservas, uso, cancelamento e recuperação são compartilhados, com soma dos tipos no orçamento. Não há outro executor, integração paga independente ou retry automático.
+
+`code/ai-context.js` valida a seleção, snapshot de guia, arquivos por hash, permissões e schema de resposta. O prompt é reconstruído pelo worker a partir dos blobs autorizados, sem repetir código e prompt no SQLite. A prévia calcula uma reserva local e seu digest protege contra mudanças entre revisão e envio. Somente os trechos/arquivos selecionados são enviados, sujeitos a limites de contexto e detecção de padrões conhecidos de credenciais.
+
+`code/proposals.js` oferece consulta, rejeição e aceitação. O serviço da Fase 3 compartilha `stageChange`/`commitChange`; assim a criação de uma revisão e a aceitação da proposta ocorrem na mesma transação após revalidar digest, revisão mais recente e estado pendente. A revisão resultante é sempre rascunho, sem substituir origem ou alterar guia. Revisão posterior exige confirmação explícita para ramificar a origem; não há merge automático.
+
+`CodeGeneration`, `CodeAIHistory` e `CodeProposalReview` integram a tela existente e preservam edições manuais durante o acompanhamento. Consumo global distingue propostas de código. Execução, testes do código gerado e captura automática continuam indisponíveis conforme a Fase 3. Detalhes e endpoints em [PHASE_3B_REPORT.md](PHASE_3B_REPORT.md).

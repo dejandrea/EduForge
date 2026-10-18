@@ -3,7 +3,8 @@ import { createAIService } from './service.js';
 export function aiRouter(db, options = {}) {
   const router = Router(),
     service = createAIService(db, options);
-  const analysis = createAIService(db, { ...options, kind: 'memory' });
+  const analysis = createAIService(db, { ...options, kind: 'memory' }),
+    code = createAIService(db, { ...options, kind: 'code' });
   router.get('/ai/settings', (req, res) => res.json(service.publicSettings()));
   router.put('/ai/settings', (req, res) => res.json(service.saveSettings(req.body)));
   router.post('/ai/test-connection', async (req, res) =>
@@ -12,7 +13,7 @@ export function aiRouter(db, options = {}) {
   router.get('/ai/usage', (req, res) =>
     res.json({
       budget: service.summary(),
-      records: [...service.usageHistory(), ...analysis.usageHistory()]
+      records: [...service.usageHistory(), ...analysis.usageHistory(), ...code.usageHistory()]
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .slice(0, 200),
     }),

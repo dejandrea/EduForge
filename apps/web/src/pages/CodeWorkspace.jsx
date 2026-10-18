@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { InputField, ResourceState, useResource } from '../components/Pedagogy';
 import CodeFiles from '../components/CodeFiles';
+import CodeGeneration from '../components/CodeGeneration';
+import CodeAIHistory from '../components/CodeAIHistory';
 import CodeEvidence from '../components/CodeEvidence';
 import CodeGuideLinks from '../components/CodeGuideLinks';
 import './CodeWorkspace.css';
@@ -50,7 +52,8 @@ function Preparation({ id, lessonId }) {
     [revisionId, setRevisionId] = useState(''),
     [error, setError] = useState(''),
     [dirty, setDirty] = useState(false),
-    [evidenceRefresh, setEvidenceRefresh] = useState(0);
+    [evidenceRefresh, setEvidenceRefresh] = useState(0),
+    [aiRefresh, setAIRefresh] = useState(0);
   useEffect(() => {
     if (!state.data || !['pending', 'running'].includes(state.data.status)) return;
     const timer = setTimeout(() => setRefresh((n) => n + 1), 1500);
@@ -168,6 +171,23 @@ function Preparation({ id, lessonId }) {
       )}
       {revision && (
         <>
+          <CodeGeneration
+            key={`generation:${revision.id}`}
+            revision={revision}
+            lessonId={lessonId}
+            dirty={dirty}
+            onQueued={() => setAIRefresh((n) => n + 1)}
+          />
+          <CodeAIHistory
+            preparationId={id}
+            refreshKey={aiRefresh}
+            dirty={dirty}
+            onRevision={(row) => {
+              setDirty(false);
+              setRevisionId(row.id);
+              setRefresh((n) => n + 1);
+            }}
+          />
           <CodeFiles
             key={revision.id}
             revision={revision}

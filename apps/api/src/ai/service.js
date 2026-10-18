@@ -6,8 +6,20 @@ import {
   guideSchema,
   memoryAnalysisSchema,
   memorySchema,
+  codeGenerateRequestSchema,
+  codeSelectionSchema,
+  codeProposalOutputSchema,
 } from '@eduforge/shared';
 import { createProviders, AIError, outputSchema, safeError } from './providers.js';
+import { codeStorage } from '../code/storage.js';
+import {
+  codeGenerationContext,
+  codeGenerationPrompt,
+  validateCodeJobContext,
+  validateCodeOutput,
+  stageCodeOutput,
+  insertCodeProposal,
+} from '../code/ai-context.js';
 import { generationContext, buildPrompt } from './context.js';
 import { insertGuideDraft } from '../guides.js';
 import {
@@ -19,10 +31,17 @@ import {
 
 export function createAIService(
   db,
-  { providers = createProviders(), clock = () => new Date(), kind = 'guide' } = {},
+  {
+    providers = createProviders(),
+    clock = () => new Date(),
+    kind = 'guide',
+    codeOptions = {},
+  } = {},
 ) {
-  const isMemory = kind === 'memory';
-  // Both queues share the task contract and execution logic. Identifiers are fixed here,
+  const isMemory = kind === 'memory',
+    isCode = kind === 'code';
+  const codeFiles = isCode ? codeStorage(codeOptions) : null;
+  // All task types share the contract, worker lease and execution logic. Identifiers are fixed here,
   // never derived from request data; bound parameter values are not rewritten.
   const identifiers = isMemory
     ? {
@@ -31,7 +50,14 @@ export function createAIService(
         ai_usage: 'memory_analysis_usage',
         result_guide_id: 'result_memory_id',
       }
-    : {};
+    : isCode
+      ? {
+          ai_jobs: 'code_generation_jobs',
+          ai_attempts: 'code_generation_attempts',
+          ai_usage: 'code_generation_usage',
+          result_guide_id: 'result_proposal_id',
+        }
+      : {};
   const prepare = (sql) =>
     db.prepare(
       sql.replace(
@@ -39,7 +65,7 @@ export function createAIService(
         (name) => identifiers[name] || name,
       ),
     );
-  const responseSchema = isMemory ? memorySchema : outputSchema;
+  const responseSchema = isCode ? codeProposalOutputSchema : isMemory ? memorySchema : outputSchema;
   const now = () => clock().toISOString();
   function transaction(fn) {
     db.exec('BEGIN IMMEDIATE');
@@ -77,14 +103,14 @@ export function createAIService(
     const charged = db
       .prepare(
         `SELECT coalesce(sum(budget_charge_usd),0) AS total FROM (
-      SELECT budget_charge_usd,budget_state,created_at FROM ai_jobs UNION ALL SELECT budget_charge_usd,budget_state,created_at FROM memory_analysis_jobs
+      SELECT budget_charge_usd,budget_state,created_at FROM ai_jobs UNION ALL SELECT budget_charge_usd,budget_state,created_at FROM memory_analysis_jobs UNION ALL SELECT budget_charge_usd,budget_state,created_at FROM code_generation_jobs
     ) WHERE substr(created_at,1,7)=? OR budget_state IN ('reserved','uncertain')`,
       )
       .get(month).total;
     const spent = db
       .prepare(
         `SELECT sum(cost_usd) AS total,sum(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS unknown FROM (
-      SELECT cost_usd,created_at FROM ai_usage UNION ALL SELECT cost_usd,created_at FROM memory_analysis_usage
+      SELECT cost_usd,created_at FROM ai_usage UNION ALL SELECT cost_usd,created_at FROM memory_analysis_usage UNION ALL SELECT cost_usd,created_at FROM code_generation_usage
     ) WHERE substr(created_at,1,7)=?`,
       )
       .get(month);
@@ -131,8 +157,89 @@ export function createAIService(
         'Credencial e acesso ao catálogo confirmados. A compatibilidade de geração será validada na chamada estruturada.',
     };
   }
+  function generationPlan(
+    lessonId,
+    request,
+    { requireCredential = true, checkBudget = true } = {},
+  ) {
+    const config = modelConfig(request.provider, request.model);
+    if (requireCredential && !providers[request.provider].hasCredential())
+      throw new AIError(
+        'MISSING_CREDENTIAL',
+        'Configure a credencial do provedor no backend antes de gerar.',
+      );
+    if (
+      config.input_per_million === null ||
+      config.output_per_million === null ||
+      !config.price_date
+    )
+      throw new AIError(
+        'PRICE',
+        'Informe os preços de entrada e saída e a data de atualização para reservar o orçamento.',
+      );
+    const context = isCode
+      ? codeGenerationContext(db, lessonId, request, codeFiles)
+      : isMemory
+        ? memoryAnalysisContext(db, lessonId, request)
+        : generationContext(db, lessonId, request);
+    const prompt = isCode
+      ? codeGenerationPrompt(context, codeFiles)
+      : isMemory
+        ? memoryAnalysisPrompt(context)
+        : buildPrompt(context);
+    if (Buffer.byteLength(prompt, 'utf8') > 200000)
+      throw new AIError(
+        'CONTEXT_LIMIT',
+        'O contexto excede o limite local de 200 KB. Reduza as instruções ou o conteúdo de referência.',
+      );
+    const inputBound =
+      Buffer.byteLength(prompt, 'utf8') + Buffer.byteLength(JSON.stringify(responseSchema)) + 4096;
+    const reserve =
+      (inputBound * Math.max(config.input_per_million, config.cached_input_per_million ?? 0) +
+        config.max_output_tokens * config.output_per_million) /
+      1e6;
+    if (checkBudget && summary().committed_usd + reserve > settings().monthly_limit_usd + 1e-10)
+      throw new AIError(
+        'BUDGET',
+        'Saldo mensal insuficiente para a reserva estimada desta geração.',
+      );
+    const snapshot = {
+      ...config,
+      timeout_seconds: settings().timeout_seconds,
+      exchange_rate_brl: settings().exchange_rate_brl,
+      exchange_rate_date: settings().exchange_rate_date,
+    };
+    const preview_digest = createHash('sha256')
+      .update(
+        JSON.stringify({ context, snapshot, provider: request.provider, model: request.model }),
+      )
+      .digest('hex');
+    return { config, context, prompt, reserve, snapshot, preview_digest };
+  }
+  function estimate(lessonId, input) {
+    if (!isCode) throw new AIError('TYPE', 'Estimativa disponível para propostas de código.');
+    const request = codeSelectionSchema.parse(input),
+      plan = generationPlan(lessonId, request, { requireCredential: false, checkBudget: false });
+    return {
+      preview_digest: plan.preview_digest,
+      reserved_usd: plan.reserve,
+      budget: summary(),
+      credential: providers[request.provider].hasCredential(),
+      within_budget: summary().remaining_usd + 1e-10 >= plan.reserve,
+      objective: plan.context.lesson.objectives,
+      technical_objective: plan.context.preparation.objective,
+      guide: plan.context.guide,
+      files: plan.context.files,
+      permissions: plan.context.permissions,
+      source_revision: plan.context.source_revision,
+      model: request.model,
+      provider: request.provider,
+    };
+  }
   function enqueue(lessonId, input) {
-    const request = (isMemory ? memoryAnalysisSchema : aiGenerateSchema).parse(input);
+    const request = (
+      isCode ? codeGenerateRequestSchema : isMemory ? memoryAnalysisSchema : aiGenerateSchema
+    ).parse(input);
     const hash = createHash('sha256').update(JSON.stringify({ lessonId, request })).digest('hex');
     return transaction(() => {
       const existing = prepare('SELECT id,request_hash FROM ai_jobs WHERE request_key=?').get(
@@ -146,50 +253,16 @@ export function createAIService(
           );
         return getJob(existing.id);
       }
-      const config = modelConfig(request.provider, request.model);
-      if (!providers[request.provider].hasCredential())
+      const { context, prompt, reserve, snapshot, preview_digest } = generationPlan(
+        lessonId,
+        request,
+      );
+      if (isCode && request.preview_digest !== preview_digest)
         throw new AIError(
-          'MISSING_CREDENTIAL',
-          'Configure a credencial do provedor no backend antes de gerar.',
-        );
-      if (
-        config.input_per_million === null ||
-        config.output_per_million === null ||
-        !config.price_date
-      )
-        throw new AIError(
-          'PRICE',
-          'Informe os preços de entrada e saída e a data de atualização para reservar o orçamento.',
-        );
-      const context = isMemory
-        ? memoryAnalysisContext(db, lessonId, request)
-        : generationContext(db, lessonId, request);
-      const prompt = isMemory ? memoryAnalysisPrompt(context) : buildPrompt(context);
-      if (Buffer.byteLength(prompt, 'utf8') > 200000)
-        throw new AIError(
-          'CONTEXT_LIMIT',
-          'O contexto excede o limite local de 200 KB. Reduza as instruções ou o conteúdo de referência.',
-        );
-      const inputBound =
-        Buffer.byteLength(prompt, 'utf8') +
-        Buffer.byteLength(JSON.stringify(responseSchema)) +
-        4096;
-      const reserve =
-        (inputBound * Math.max(config.input_per_million, config.cached_input_per_million ?? 0) +
-          config.max_output_tokens * config.output_per_million) /
-        1e6;
-      if (summary().committed_usd + reserve > settings().monthly_limit_usd + 1e-10)
-        throw new AIError(
-          'BUDGET',
-          'Saldo mensal insuficiente para a reserva estimada desta geração.',
+          'CODE_PREVIEW_CHANGED',
+          'Guia, código ou configuração mudou desde a prévia. Revise uma nova estimativa antes de autorizar.',
         );
       const id = randomUUID();
-      const snapshot = {
-        ...config,
-        timeout_seconds: settings().timeout_seconds,
-        exchange_rate_brl: settings().exchange_rate_brl,
-        exchange_rate_date: settings().exchange_rate_date,
-      };
       prepare(
         `INSERT INTO ai_jobs (id,request_key,request_hash,type,status,lesson_id,source_guide_id,template_version_id,roadmap_version_id,provider,model,input,config,reserved_usd,budget_charge_usd,budget_state,created_at)
         VALUES (?,?,?,?,'pending',?,?,?,?,?,?,?,?,?,?,'reserved',?)`,
@@ -197,14 +270,20 @@ export function createAIService(
         id,
         request.request_key,
         hash,
-        isMemory ? 'analysis' : request.section_id ? 'regenerate' : 'generate',
+        isCode
+          ? 'code_proposal'
+          : isMemory
+            ? 'analysis'
+            : request.section_id
+              ? 'regenerate'
+              : 'generate',
         lessonId,
-        request.source_guide_id || null,
+        request.source_guide_id || request.guide_id || null,
         request.template_version_id || null,
         request.roadmap_version_id || null,
         request.provider,
         request.model,
-        JSON.stringify({ request, context, prompt }),
+        JSON.stringify({ request, context, ...(!isCode ? { prompt } : {}) }),
         JSON.stringify(snapshot),
         reserve,
         reserve,
@@ -307,7 +386,8 @@ export function createAIService(
       output = null,
       failure = null;
     try {
-      if (isMemory) memoryAnalysisContext(db, job.lesson_id, input.request);
+      if (isCode) validateCodeJobContext(db, job.lesson_id, input.context);
+      else if (isMemory) memoryAnalysisContext(db, job.lesson_id, input.request);
       else generationContext(db, job.lesson_id, input.request);
       if (prepare('SELECT cancel_requested FROM ai_jobs WHERE id=?').get(job.id).cancel_requested)
         throw new AIError('CANCELLED', 'Tarefa cancelada antes da chamada.');
@@ -316,10 +396,11 @@ export function createAIService(
         throw new AIError('MODEL', 'O modelo não está disponível para esta credencial.');
       combined.throwIfAborted();
       prepare('UPDATE ai_jobs SET progress=30 WHERE id=?').run(job.id);
+      const preparedPrompt = isCode ? codeGenerationPrompt(input.context, codeFiles) : input.prompt;
       paidStarted = true;
       const result = await providers[job.provider].generate({
         model: job.model,
-        prompt: input.prompt,
+        prompt: preparedPrompt,
         max_output_tokens: config.max_output_tokens,
         temperature: config.temperature,
         signal: combined,
@@ -329,7 +410,10 @@ export function createAIService(
       output = responseSchema.parse(
         typeof result.output === 'string' ? JSON.parse(result.output) : result.output,
       );
-      if (isMemory) validateMemory(db, job.lesson_id, output, input.context.excerpts);
+      if (isCode) {
+        validateCodeOutput(input.context, output);
+        output = await stageCodeOutput(input.context, output, codeFiles);
+      } else if (isMemory) validateMemory(db, job.lesson_id, output, input.context.excerpts);
       else {
         const targets = input.context.section_id
           ? input.context.template.sections.filter((s) => s.id === input.context.section_id)
@@ -351,7 +435,13 @@ export function createAIService(
             code: 'TIMEOUT',
             message: 'Tempo limite atingido. Nenhuma repetição automática foi realizada.',
           }
-        : safeError(error);
+        : isCode && ['SyntaxError', 'ZodError'].includes(error.name)
+          ? {
+              code: 'CODE_SCHEMA',
+              message:
+                'Resposta de código incompleta ou fora do schema; nenhuma revisão foi criada.',
+            }
+          : safeError(error);
     } finally {
       clearInterval(poll);
     }
@@ -364,7 +454,8 @@ export function createAIService(
       const cost = costOf(config, usage);
       let resultId = null;
       if (!cancelled && !failure) {
-        if (isMemory)
+        if (isCode) resultId = insertCodeProposal(db, job, input.context, output);
+        else if (isMemory)
           resultId = insertMemoryDraft(db, job.lesson_id, output, input.context.excerpts);
         else {
           const data = guideSchema.parse({
@@ -429,6 +520,7 @@ export function createAIService(
     saveSettings,
     testConnection,
     enqueue,
+    estimate,
     cancel,
     getJob,
     summary,
@@ -446,10 +538,14 @@ export function createAIService(
 
 export function createAIWorkerService(db, options = {}) {
   const guides = createAIService(db, options),
-    memories = createAIService(db, { ...options, kind: 'memory' });
+    memories = createAIService(db, { ...options, kind: 'memory' }),
+    code = createAIService(db, { ...options, kind: 'code' });
   return {
-    recoverInterrupted: () => guides.recoverInterrupted() + memories.recoverInterrupted(),
+    recoverInterrupted: () =>
+      guides.recoverInterrupted() + memories.recoverInterrupted() + code.recoverInterrupted(),
     processNext: async (options) =>
-      (await guides.processNext(options)) || (await memories.processNext(options)),
+      (await guides.processNext(options)) ||
+      (await memories.processNext(options)) ||
+      (await code.processNext(options)),
   };
 }

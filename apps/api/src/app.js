@@ -5,6 +5,7 @@ import { pedagogyRouter } from './pedagogy.js';
 import { aiRouter } from './ai/routes.js';
 import { materialsRouter } from './materials/routes.js';
 import { createCodeService } from './code/service.js';
+import { codeAIRouter } from './code/ai-routes.js';
 import { codeRouter } from './code/routes.js';
 export function createApp(db, options = {}) {
   const app = express();
@@ -23,6 +24,7 @@ export function createApp(db, options = {}) {
   app.use(express.json({ limit: '2mb' }));
   app.locals.code = createCodeService(db, options.code);
   app.use('/api', codeRouter(db, app.locals.code));
+  app.use('/api', codeAIRouter(db, app.locals.code, options.ai));
   app.use('/api', materialsRouter(db, { ...options.materials, ai: options.ai }));
   app.use('/api', aiRouter(db, options.ai));
   app.use('/api', pedagogyRouter(db));

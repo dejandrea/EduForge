@@ -239,7 +239,7 @@ export function createCodeService(db, options = {}) {
     if (!entry.text) throw problem('Arquivo binário: disponível apenas no manifesto.');
     return { path, hash: entry.hash, content: (await storage.read(entry.hash)).toString('utf8') };
   }
-  async function change(id, input) {
+  async function stageChange(id, input) {
     const data = codeChangeSchema.parse(input),
       base = revision(id);
     if (preparation(base.preparation_id).status !== 'ready')
@@ -273,9 +273,16 @@ export function createCodeService(db, options = {}) {
       });
     }
     if (!files.size) throw problem('A revisão precisa conservar ao menos um arquivo.');
-    return transaction(() =>
-      addRevision(base.preparation_id, id, [...files.values()], data.summary),
-    );
+    return { base, manifest: [...files.values()], summary: data.summary };
+  }
+  function commitChange(staged) {
+    const current = revision(staged.base.id);
+    if (current.digest !== staged.base.digest) throw problem('A revisao de origem mudou.');
+    return addRevision(current.preparation_id, current.id, staged.manifest, staged.summary);
+  }
+  async function change(id, input) {
+    const staged = await stageChange(id, input);
+    return transaction(() => commitChange(staged));
   }
   function review(id, input) {
     const data = codeReviewSchema.parse(input),
@@ -391,6 +398,8 @@ export function createCodeService(db, options = {}) {
     recover,
     file,
     change,
+    stageChange,
+    commitChange,
     review,
     inspect,
     manual,

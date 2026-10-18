@@ -22,6 +22,10 @@ Implementada: referências por projeto; arquivos locais por aula e extração te
 
 Implementada a camada de inspeção estática: preparações Git por aula usando referências existentes, cópias versionadas por hash, propostas e comparação de arquivos, aprovação humana, evidências, capturas PNG manuais e vínculos com etapas/versionamento de guias. Execução e capturas automáticas explicitamente indisponíveis sem isolamento adequado; não há publicação no GitHub. Validação assistida com o repositório real e inspeção visual pendentes. Ver `PHASE_3_REPORT.md`.
 
+## Fase 3B — Geração assistida de código com IA
+
+Implementada: seleção de guia/seções e arquivos com permissões explícitas; prévia/custo antes da autorização paga; proposta estruturada, comparação, ajustes e decisão humana; criação única de revisão em rascunho com proteção contra conflitos. Reutiliza worker, provedores e orçamento existentes. Sem execução do código, aprovação automática ou publicação. Teste real com a conta/modelo da professora e validação no Game Lab pendentes. Ver `PHASE_3B_REPORT.md`.
+
 ## Fase 4 — Documentos
 
 Worker Python com python-docx, templates, imagens vinculadas e revisão visual dos documentos exportados.

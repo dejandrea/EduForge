@@ -31,6 +31,16 @@ Use o upload manual de capturas PNG (até 5 MB, 4096 × 4096), registre evidênc
 
 Limites, endpoints, fluxo e pendências em [Relatório da Fase 3](docs/PHASE_3_REPORT.md). Documentação anterior: [arquitetura](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), [Fase 2B](docs/PHASE_2B_REPORT.md) e [Fase 2C](docs/PHASE_2C_REPORT.md).
 
+## Evolução do código com IA — Fase 3B
+
+Em **Aula → Código e capturas**, abra uma preparação pronta, escolha a revisão e abra **Gerar evolução do código com IA**. Selecione o guia da mesma aula, as seções necessárias e os arquivos para leitura. Autorize separadamente alteração, remoção ou criação de caminhos específicos.
+
+A prévia local mostra os trechos enviados, custo estimado e saldo antes de qualquer chamada paga. A geração requer confirmação explícita, usa os provedores/modelos/orçamento já configurados e produz uma proposta, sem executar código. Guias em rascunho também podem ser selecionados; o conteúdo autorizado fica fotografado na tarefa.
+
+Revise a comparação, ajuste e aceite ou rejeite. Aceitar cria outra revisão em rascunho; a origem e o guia permanecem preservados. O histórico mostra modelo, uso e custos. Compatibilidade com Game Lab e assets precisa de verificação manual da professora. Não há execução ou publicação automática.
+
+Fluxo, limites, endpoints e teste da Aula 3 do Frogger: [Relatório da Fase 3B](docs/PHASE_3B_REPORT.md).
+
 ## Dados e verificação
 
 Migrations são incrementais ao iniciar a aplicação; não apague o banco para atualizar. Para backup, encerre o EduForge e copie juntos o banco `storage/eduforge.db` e as pastas `storage/materials` e `storage/code`. Arquivos locais e credenciais ficam fora do Git.

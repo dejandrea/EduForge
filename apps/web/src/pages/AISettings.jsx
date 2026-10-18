@@ -341,7 +341,12 @@ export default function AISettings() {
                       <td>
                         {new Date(r.created_at).toLocaleString('pt-BR')}
                         <small>
-                          {r.provider} · {r.model}
+                          {r.provider} · {r.model} ·{' '}
+                          {r.type === 'code_proposal'
+                            ? 'Proposta de código'
+                            : r.type === 'analysis'
+                              ? 'Análise de materiais'
+                              : 'Guia pedagógico'}
                         </small>
                       </td>
                       <td>
