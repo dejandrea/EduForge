@@ -26,6 +26,10 @@ Implementada a camada de inspeção estática: preparações Git por aula usando
 
 Implementada: seleção de guia/seções e arquivos com permissões explícitas; prévia/custo antes da autorização paga; proposta estruturada, comparação, ajustes e decisão humana; criação única de revisão em rascunho com proteção contra conflitos. Reutiliza worker, provedores e orçamento existentes. Sem execução do código, aprovação automática ou publicação. Teste real com a conta/modelo da professora e validação no Game Lab pendentes. Ver `PHASE_3B_REPORT.md`.
 
+## Fase 3C — Experiência de código e IA
+
+Implementada a organização em Visão geral, Código, Evidências e Histórico, com próxima ação derivada dos registros existentes, seleção de código já preparado e versão mais recente, formulário de teste manual com captura opcional e sugestões confirmadas de vínculo ao guia. Formulários preservados entre abas, navegação por teclado e detalhes técnicos secundários. Serviços, migrations e contratos de API preservados. Inspeção visual assistida com a professora pendente; ver `PHASE_3C_REPORT.md`.
+
 ## Fase 4 — Documentos
 
 Worker Python com python-docx, templates, imagens vinculadas e revisão visual dos documentos exportados.

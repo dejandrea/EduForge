@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { reviewStatuses } from '@eduforge/shared';
 import { api } from '../api';
@@ -32,6 +32,28 @@ export default function CodeGeneration({ revision, lessonId, dirty, onQueued }) 
       model ||
       (selectedProvider === config.data?.settings.provider ? config.data?.settings.model : '') ||
       '';
+  const suggested = useRef(new Set());
+  useEffect(() => {
+    if (guideId || !guides.data) return;
+    const latest = guides.data
+      .filter((g) => ['draft', 'in_review', 'approved'].includes(g.status))
+      .sort((a, b) => b.version - a.version)[0];
+    if (latest) setGuideId(latest.id);
+  }, [guides.data, guideId]);
+  useEffect(() => {
+    if (!guide.data || !template.data || suggested.current.has(guide.data.id)) return;
+    suggested.current.add(guide.data.id);
+    const relevant = guide.data.data.content
+      .filter(
+        (s) =>
+          s.content.trim() &&
+          /código|codigo|programa|implement|desenvolv|prática|pratica|etapa|passo/i.test(
+            template.data.data.sections.find((t) => t.id === s.section_id)?.title || '',
+          ),
+      )
+      .map((s) => s.section_id);
+    setSections(relevant);
+  }, [guide.data, template.data]);
   const selection = {
       source_revision_id: revision.id,
       guide_id: guideId,
@@ -120,11 +142,13 @@ export default function CodeGeneration({ revision, lessonId, dirty, onQueued }) 
     });
   }
   return (
-    <details className="pedagogy-panel code-generation">
+    <details
+      className="pedagogy-panel code-generation"
+      open={revision.number === 1 && revision.status !== 'approved'}
+    >
       <summary>Gerar evolução do código com IA</summary>
       <p>
-        Origem: revisão {revision.number} · SHA-256 {revision.digest}. Para outra origem, use o
-        seletor de revisão acima.
+        Código de partida: versão {revision.number}. Use o seletor acima para escolher outra versão.
       </p>
       <p className="read-only">
         A proposta não será executada. A aceitação humana cria outra revisão em rascunho. Arquivos
@@ -181,6 +205,10 @@ export default function CodeGeneration({ revision, lessonId, dirty, onQueued }) 
           {guide.data && template.data && (
             <div>
               <h3>Seções necessárias do guia</h3>
+              <p>
+                Sugerimos seções pelo título. Confira a seleção antes de enviar; nenhuma chamada é
+                feita automaticamente.
+              </p>
               {guide.data.data.content.map((s) => (
                 <label className="check-field" key={s.section_id}>
                   <input

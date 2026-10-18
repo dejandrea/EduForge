@@ -70,12 +70,15 @@ function ReviewEditor({ proposal, dirty, onRevision, onChanged }) {
             ? 'Proposta rejeitada'
             : 'Proposta disponível · aguardando revisão'}
       </p>
-      <p>
-        Origem: {proposal.source_revision_id} · SHA-256 {proposal.source_digest}
-      </p>
-      <p>
-        Guia: {proposal.guide_id} · estado no envio: {proposal.guide_status}
-      </p>
+      <details>
+        <summary>Identificadores técnicos da proposta</summary>
+        <p>
+          Origem: {proposal.source_revision_id} · SHA-256 {proposal.source_digest}
+        </p>
+        <p>
+          Guia: {proposal.guide_id} · estado no envio: {proposal.guide_status}
+        </p>
+      </details>
       <p className="read-only">
         A proposta não foi executada. O conteúdo do guia e a revisão de origem permanecem
         preservados.
@@ -177,7 +180,7 @@ function ReviewEditor({ proposal, dirty, onRevision, onChanged }) {
               )}
               <div className="actions">
                 <button className="primary" disabled={dirty || (newer && !allowNewer)}>
-                  Aceitar proposta e criar revisão em rascunho
+                  Criar nova versão com este código
                 </button>
                 <button type="button" className="danger" onClick={reject}>
                   Rejeitar proposta

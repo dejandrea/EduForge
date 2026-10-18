@@ -41,6 +41,16 @@ Revise a comparação, ajuste e aceite ou rejeite. Aceitar cria outra revisão e
 
 Fluxo, limites, endpoints e teste da Aula 3 do Frogger: [Relatório da Fase 3B](docs/PHASE_3B_REPORT.md).
 
+## Experiência de código — Fase 3C
+
+Em **Aula → Código e capturas**, a **Visão geral** mostra o progresso e recomenda o próximo passo. Uma única preparação pronta é selecionada automaticamente, com a versão mais recente do código. Se houver mais de uma, escolha o código de partida existente; não é preciso importar outra vez.
+
+Use **Código** para editar, gerar e comparar propostas e aprovar uma versão; **Evidências** para registrar o teste realizado por você, anexar PNG e associar os registros ao guia; **Histórico** para consultar preparações, versões, custos e identificadores técnicos. Trocar de aba preserva formulários e capturas ainda não enviados. A geração continua opcional e depende de prévia e consentimento explícito.
+
+Para código já aprovado, a ação recomendada é **Registrar teste e captura**. O formulário registra ambiente, resultado e observações como relato manual da professora. A aprovação da captura e a associação ao guia são decisões separadas. Sugestões vindas da IA só aparecem para a proposta que criou aquela versão e precisam de confirmação; o guia permanece preservado.
+
+Detalhes e verificação: [Relatório da Fase 3C](docs/PHASE_3C_REPORT.md).
+
 ## Dados e verificação
 
 Migrations são incrementais ao iniciar a aplicação; não apague o banco para atualizar. Para backup, encerre o EduForge e copie juntos o banco `storage/eduforge.db` e as pastas `storage/materials` e `storage/code`. Arquivos locais e credenciais ficam fora do Git.

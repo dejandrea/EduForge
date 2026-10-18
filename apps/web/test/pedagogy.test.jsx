@@ -19,7 +19,7 @@ import AISettings from '../src/pages/AISettings';
 import LessonMaterials from '../src/pages/LessonMaterials';
 import ProjectReferences from '../src/pages/ProjectReferences';
 import ContextSelection, { emptySelection } from '../src/components/ContextSelection';
-import CodeWorkspace from '../src/pages/CodeWorkspace';
+import CodeWorkspace, { codeProgress } from '../src/pages/CodeWorkspace';
 
 // Load the server with Node so Vite does not bundle native SQLite for the DOM environment.
 const require = createRequire(import.meta.url);
@@ -33,6 +33,27 @@ configure({ asyncUtilTimeout: 5000 });
 
 let db, server, project, request, aiService, providerCalls, codeFolder, codeService, aiCodeService;
 const nativeFetch = globalThis.fetch;
+function testPng() {
+  const chunk = (type, data) => {
+    const head = Buffer.alloc(4),
+      tail = Buffer.alloc(4),
+      body = Buffer.concat([Buffer.from(type), data]);
+    head.writeUInt32BE(data.length);
+    let crc = 0xffffffff;
+    for (const b of body) {
+      crc ^= b;
+      for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    tail.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([head, body, tail]);
+  };
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0])),
+    chunk('IDAT', require('node:zlib').deflateSync(Buffer.from([0, 255, 255, 255, 255]))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 beforeEach(async () => {
   db = openDatabase(':memory:');
   providerCalls = { catalog: 0, generate: 0 };
@@ -99,7 +120,40 @@ beforeEach(async () => {
   server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
-  vi.stubGlobal('fetch', (path, options) => nativeFetch(new URL(path, base), options));
+  vi.stubGlobal('fetch', async (path, options) => {
+    // JSDOM files need an explicit multipart bridge to Node's native fetch.
+    if (options?.body instanceof FormData) {
+      const boundary = `test-${crypto.randomUUID()}`,
+        parts = [];
+      for (const [name, value] of options.body.entries()) {
+        parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"`));
+        if (typeof value === 'string') parts.push(Buffer.from(`\r\n\r\n${value}\r\n`));
+        else {
+          const bytes = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(Buffer.from(reader.result));
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(value);
+          });
+          parts.push(
+            Buffer.from(`; filename="${value.name}"\r\nContent-Type: ${value.type}\r\n\r\n`),
+            bytes,
+            Buffer.from('\r\n'),
+          );
+        }
+      }
+      parts.push(Buffer.from(`--${boundary}--\r\n`));
+      options = {
+        ...options,
+        headers: {
+          ...options.headers,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body: Buffer.concat(parts),
+      };
+    }
+    return nativeFetch(new URL(path, base), options);
+  });
   request = async (path, body) => {
     const res = await fetch(`/api${path}`, {
       method: body ? 'POST' : 'GET',
@@ -143,6 +197,298 @@ async function approvedRoadmap() {
   return request(`/roadmaps/${row.id}/approve`, { confirm: true, expected_approved_id: null });
 }
 
+async function existingCode({ approved = false, withGuide = true } = {}) {
+  const lesson = await request(`/projects/${project.id}/lessons`, {
+    number: 3,
+    title: 'Frogger Game',
+    duration: 60,
+  });
+  const ref = await request(`/projects/${project.id}/references`, {
+    kind: 'github',
+    title: 'Frogger',
+    url: 'https://github.com/example/frogger',
+    branch: 'main',
+    commit_sha: null,
+  });
+  const prep = codeService.enqueue(lesson.id, {
+    reference_id: ref.id,
+    branch: 'main',
+    objective: 'Movimento do sapo',
+    confirm: true,
+  });
+  await codeService.start(prep.id);
+  let revision = codeService.detail(prep.id).revisions[0];
+  if (approved) {
+    revision = await request(`/code/revisions/${revision.id}/changes`, {
+      summary: 'Movimento revisado',
+      changes: [{ path: 'src/game.js', content: 'export const frog = 2;' }],
+    });
+    await request(`/code/revisions/${revision.id}/review`, {
+      confirm: true,
+      digest: revision.digest,
+      decision: 'approved',
+    });
+  }
+  let guide;
+  if (withGuide) {
+    const roadmap = await approvedRoadmap(),
+      templates = await request('/templates');
+    const template = (await request(`/templates/${templates[0].id}/versions`)).find(
+      (v) => v.status === 'approved',
+    );
+    guide = await request(`/lessons/${lesson.id}/guides`, {
+      template_version_id: template.id,
+      roadmap_version_id: roadmap.id,
+      content: template.data.sections
+        .filter((s) => s.enabled)
+        .map((s) => ({ section_id: s.id, content: 'Conferir movimento do sapo nesta aula.' })),
+    });
+  }
+  const view = page(`/lessons/${lesson.id}/code`, '/lessons/:lessonId/code', <CodeWorkspace />);
+  return { lesson, prep, revision, guide, view };
+}
+
+test('fase 3C abre versão aprovada existente e orienta registro sem nova geração ou aprovação', async () => {
+  const { revision, guide } = await existingCode({ approved: true });
+  fireEvent.click(await screen.findByRole('button', { name: 'Registrar teste e captura' }));
+  expect(screen.getByRole('tab', { name: 'Evidências' }).getAttribute('aria-selected')).toBe(
+    'true',
+  );
+  expect(screen.queryByRole('button', { name: 'Aprovar esta versão do código' })).toBe(null);
+  expect(screen.getByLabelText('Ambiente utilizado').value).toBe('Code.org Game Lab');
+  fireEvent.change(screen.getByLabelText('Resultado do teste manual'), {
+    target: { value: 'Funcionou' },
+  });
+  fireEvent.change(screen.getByLabelText('Observações do teste (opcional)'), {
+    target: { value: 'Conferi as colisões no Code.org.' },
+  });
+  fireEvent.click(screen.getByRole('tab', { name: 'Histórico' }));
+  expect(await screen.findByRole('heading', { name: 'Versões e detalhes técnicos' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('tab', { name: 'Evidências' }));
+  expect(screen.getByLabelText('Observações do teste (opcional)').value).toBe(
+    'Conferi as colisões no Code.org.',
+  );
+  const image = new File([testPng()], 'frogger.png', { type: 'image/png' });
+  fireEvent.change(screen.getByLabelText('Captura PNG do teste (opcional)'), {
+    target: { files: [image] },
+  });
+  fireEvent.click(screen.getByRole('tab', { name: 'Visão geral' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Evidências' }));
+  expect(screen.getByLabelText('Captura PNG do teste (opcional)').files[0]).toBe(image);
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar teste e captura' }));
+  await screen.findByText(/Teste manual registrado\. Confira/);
+  const record = db
+    .prepare("SELECT * FROM code_evidence WHERE revision_id=? AND kind='manual'")
+    .get(revision.id);
+  expect(record.origin).toBe('manual');
+  expect(record.result).toBe('reported');
+  expect(record.status).toBe('pending');
+  expect(record.description).toContain('realizado pela professora em Code.org');
+  const capture = db.prepare("SELECT * FROM code_evidence WHERE kind='capture'").get();
+  expect(capture.revision_id).toBe(revision.id);
+  expect(capture.status).toBe('pending');
+  const captureArticle = (await screen.findByRole('heading', { name: 'Captura de tela' })).closest(
+    'article',
+  );
+  fireEvent.click(within(captureArticle).getByRole('button', { name: 'Aprovar registro' }));
+  await waitFor(() =>
+    expect(db.prepare('SELECT status FROM code_evidence WHERE id=?').get(capture.id).status).toBe(
+      'approved',
+    ),
+  );
+  await waitFor(() => expect(screen.getByLabelText('Versão do guia').value).toBe(guide.id));
+  await waitFor(() =>
+    expect(screen.getByLabelText('Seção do guia').options.length).toBeGreaterThan(1),
+  );
+  fireEvent.change(screen.getByLabelText('Seção do guia'), {
+    target: { value: guide.data.content[0].section_id },
+  });
+  fireEvent.change(screen.getByLabelText('Etapa da aula'), {
+    target: { value: 'Conferir movimento' },
+  });
+  await screen.findByRole('option', {
+    name: new RegExp(record.description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+  });
+  fireEvent.change(screen.getByLabelText('Registro de teste associado'), {
+    target: { value: record.id },
+  });
+  window.confirm.mockReturnValueOnce(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Vincular arquivo ou registro ao guia' }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Vincular arquivo ou registro ao guia' }).disabled,
+    ).toBe(false),
+  );
+  expect(db.prepare('SELECT count(*) n FROM code_guide_links').get().n).toBe(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Vincular arquivo ou registro ao guia' }));
+  await screen.findByText('Vínculo salvo. O guia permanece preservado.');
+  fireEvent.click(screen.getByRole('button', { name: 'Vincular arquivo ou registro ao guia' }));
+  await screen.findByText('Este vínculo já existe. Nenhum registro duplicado foi criado.');
+  expect(db.prepare('SELECT count(*) n FROM code_guide_links').get().n).toBe(1);
+  expect(providerCalls.generate).toBe(0);
+  expect(db.prepare('SELECT count(*) n FROM code_preparations').get().n).toBe(1);
+  fireEvent.click(screen.getByRole('tab', { name: 'Visão geral' }));
+  expect(await screen.findByText(/Documentação concluída: código aprovado/)).toBeTruthy();
+});
+
+test('fase 3C preserva editor, instruções e navega por teclado entre áreas', async () => {
+  await existingCode({ withGuide: false });
+  await screen.findByRole('button', { name: 'Gerar com IA ou revisar código de partida' });
+  const overview = screen.getByRole('tab', { name: 'Visão geral' });
+  fireEvent.keyDown(overview, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Código', exact: true }));
+  fireEvent.change(screen.getByLabelText('Conteúdo proposto'), {
+    target: { value: 'rascunho não salvo' },
+  });
+  fireEvent.change(screen.getByLabelText('Instruções técnicas adicionais'), {
+    target: { value: 'Preserve sprites.' },
+  });
+  fireEvent.click(screen.getByRole('tab', { name: 'Evidências' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Código', exact: true }));
+  expect(screen.getByLabelText('Conteúdo proposto').value).toBe('rascunho não salvo');
+  expect(screen.getByLabelText('Instruções técnicas adicionais').value).toBe('Preserve sprites.');
+  expect(screen.getByRole('button', { name: 'Aprovar esta versão do código' }).disabled).toBe(true);
+  expect(
+    await screen.findByText(
+      'Não há guia nesta aula. Cadastre um rascunho no editor existente para continuar.',
+    ),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText('Cadastre e selecione um modelo nas configurações de IA.'),
+  ).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole('tab', { name: 'Código', exact: true }), { key: 'End' });
+  expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Histórico' }));
+});
+
+test('fase 3C informa ausência de referência e erro de registro preserva formulário', async () => {
+  const lesson = await request(`/projects/${project.id}/lessons`, {
+    number: 1,
+    title: 'Sem referência',
+  });
+  const view = page(`/lessons/${lesson.id}/code`, '/lessons/:lessonId/code', <CodeWorkspace />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Código', exact: true }));
+  expect(await screen.findByRole('link', { name: 'Referências do projeto' })).toBeTruthy();
+  view.unmount();
+  await existingCode({ approved: true });
+  fireEvent.click(await screen.findByRole('button', { name: 'Registrar teste e captura' }));
+  const realFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', (url, options) =>
+    options?.method === 'POST' && String(url).endsWith('/evidence')
+      ? Promise.resolve(
+          new Response(JSON.stringify({ error: { message: 'Falha simulada ao gravar relato.' } }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      : realFetch(url, options),
+  );
+  fireEvent.change(screen.getByLabelText('Resultado do teste manual'), {
+    target: { value: 'Apresentou problemas' },
+  });
+  fireEvent.change(screen.getByLabelText('Observações do teste (opcional)'), {
+    target: { value: 'Meu relato preservado.' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar teste e captura' }));
+  expect(await screen.findByRole('alert')).toHaveProperty(
+    'textContent',
+    'Falha simulada ao gravar relato.',
+  );
+  expect(screen.getByLabelText('Observações do teste (opcional)').value).toBe(
+    'Meu relato preservado.',
+  );
+});
+
+test('fase 3C progresso deriva registros e não confunde aprovação com funcionamento', () => {
+  const revision = { status: 'approved', number: 2 };
+  expect(codeProgress(revision, [], [], []).next[0]).toBe('Registrar teste e captura');
+  const manual = {
+    id: 'm',
+    kind: 'manual',
+    origin: 'manual',
+    status: 'pending',
+    description: 'Teste manual realizado pela professora.',
+  };
+  expect(
+    codeProgress(revision, [{ ...manual, description: 'Observação sobre arquivos.' }], [], [])
+      .manual,
+  ).toBe(false);
+  expect(codeProgress(revision, [{ ...manual, origin: 'automated' }], [], []).manual).toBe(false);
+  const capture = { id: 'c', kind: 'capture', status: 'pending' };
+  expect(codeProgress(revision, [manual, capture], [{ evidence_id: 'm' }], []).complete).toBe(
+    false,
+  );
+  expect(
+    codeProgress(revision, [manual, { ...capture, status: 'approved' }], [{ evidence_id: 'm' }], [])
+      .complete,
+  ).toBe(true);
+  expect(
+    codeProgress(
+      { ...revision, status: 'draft' },
+      [manual, { ...capture, status: 'approved' }],
+      [{ evidence_id: 'm' }],
+      [],
+    ).complete,
+  ).toBe(false);
+  expect(
+    codeProgress(revision, [{ ...manual, status: 'approved' }], [{ evidence_id: 'm' }], [])
+      .complete,
+  ).toBe(true);
+});
+
+test('fase 3C solicita escolha quando há dois códigos prontos sem reimportar', async () => {
+  const { lesson, view } = await existingCode({ approved: true });
+  view.unmount();
+  const ref = (await request(`/projects/${project.id}/references`))[0];
+  const second = codeService.enqueue(lesson.id, {
+    reference_id: ref.id,
+    branch: 'main',
+    objective: 'Outra origem',
+    confirm: true,
+  });
+  await codeService.start(second.id);
+  page(`/lessons/${lesson.id}/code`, '/lessons/:lessonId/code', <CodeWorkspace />);
+  const choice = await screen.findByRole('button', { name: /Movimento do sapo.*Pronta/ });
+  expect(screen.queryByRole('heading', { name: 'Seu próximo passo' })).toBe(null);
+  fireEvent.click(choice);
+  await screen.findByRole('button', { name: 'Registrar teste e captura' });
+  fireEvent.click(screen.getByRole('tab', { name: 'Código', exact: true }));
+  expect(screen.getByLabelText('Versão do código').selectedOptions[0].textContent).toContain(
+    'Versão 2',
+  );
+  expect(db.prepare('SELECT count(*) n FROM code_preparations').get().n).toBe(2);
+});
+
+test('fase 3C captura inválida preserva relato salvo e permite tentar novamente sem duplicá-lo', async () => {
+  await existingCode({ approved: true });
+  fireEvent.click(await screen.findByRole('button', { name: 'Registrar teste e captura' }));
+  fireEvent.change(screen.getByLabelText('Resultado do teste manual'), {
+    target: { value: 'Funcionou parcialmente' },
+  });
+  const input = screen.getByLabelText('Captura PNG do teste (opcional)');
+  fireEvent.change(input, {
+    target: { files: [new File(['invalid'], 'invalid.png', { type: 'image/png' })] },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar teste e captura' }));
+  expect(await screen.findByRole('alert')).toHaveProperty(
+    'textContent',
+    expect.stringContaining('O relato já foi salvo.'),
+  );
+  expect(
+    db.prepare("SELECT count(*) n FROM code_evidence WHERE kind='manual' AND origin='manual'").get()
+      .n,
+  ).toBe(1);
+  fireEvent.change(input, {
+    target: { files: [new File([testPng()], 'retry.png', { type: 'image/png' })] },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Enviar captura deste teste' }));
+  await screen.findByText(/Teste manual registrado\. Confira/);
+  expect(
+    db.prepare("SELECT count(*) n FROM code_evidence WHERE kind='manual' AND origin='manual'").get()
+      .n,
+  ).toBe(1);
+  expect(db.prepare("SELECT count(*) n FROM code_evidence WHERE kind='capture'").get().n).toBe(1);
+});
+
 test('código e capturas prepara cópia simulada, inspeciona, cria revisão e aprova exatamente o hash', async () => {
   const lesson = await request(`/projects/${project.id}/lessons`, {
     number: 3,
@@ -157,7 +503,7 @@ test('código e capturas prepara cópia simulada, inspeciona, cria revisão e ap
     commit_sha: null,
   });
   page(`/lessons/${lesson.id}/code`, '/lessons/:lessonId/code', <CodeWorkspace />);
-  await screen.findByText(/Nível B indisponível/);
+  fireEvent.click(screen.getByRole('tab', { name: 'Código', exact: true }));
   await screen.findByRole('option', { name: /Frogger Game/ });
   fireEvent.change(screen.getByLabelText('Repositório GitHub associado'), {
     target: { value: ref.id },
@@ -176,22 +522,22 @@ test('código e capturas prepara cópia simulada, inspeciona, cria revisão e ap
   fireEvent.change(screen.getByLabelText('Conteúdo proposto'), {
     target: { value: 'export const frog = 2;' },
   });
-  expect(screen.getByRole('button', { name: 'Aprovar esta revisão de código' }).disabled).toBe(
-    true,
-  );
+  expect(screen.getByRole('button', { name: 'Aprovar esta versão do código' }).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Adicionar alteração à proposta' }));
   fireEvent.change(screen.getByLabelText('Resumo das alterações'), {
     target: { value: 'Atualiza movimento' },
   });
   fireEvent.click(
-    screen.getByRole('button', { name: 'Gravar nova revisão com as alterações adicionadas' }),
+    screen.getByRole('button', { name: 'Salvar nova versão com as alterações adicionadas' }),
   );
-  await screen.findByRole('heading', { name: 'Arquivos da revisão 2' });
+  await screen.findByRole('heading', { name: 'Arquivos da versão 2' });
+  fireEvent.click(screen.getByRole('tab', { name: 'Evidências', exact: true }));
   fireEvent.click(
-    screen.getByRole('button', { name: 'Executar inspeção estática sem rodar código' }),
+    screen.getByRole('button', { name: 'Verificar estrutura do código sem executar' }),
   );
   await screen.findByText('Inspeção estática concluída; funcionamento não testado.');
-  fireEvent.click(screen.getByRole('button', { name: 'Aprovar esta revisão de código' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Código', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Aprovar esta versão do código' }));
   await screen.findByText('Código aprovado pela professora');
   expect(db.prepare("SELECT number FROM code_revisions WHERE status='approved'").get().number).toBe(
     2,
@@ -255,17 +601,17 @@ test('evolução com IA exige prévia e consentimento; preserva edição manual 
     })),
   });
   page(`/lessons/${lesson.id}/code`, '/lessons/:lessonId/code', <CodeWorkspace />);
-  fireEvent.click(
-    await screen.findByRole('button', { name: /Evoluir a aula.*Pronta para inspeção/ }),
-  );
-  fireEvent.click(
-    await screen.findByText('Gerar evolução do código com IA', { selector: 'summary' }),
-  );
+  await screen.findByRole('button', { name: 'Gerar com IA ou revisar código de partida' });
+  fireEvent.click(screen.getByRole('tab', { name: 'Código', exact: true }));
   await screen.findByRole('option', { name: /Guia v1/ });
   fireEvent.change(await screen.findByLabelText('Guia pedagógico para evolução do código'), {
     target: { value: guide.id },
   });
-  fireEvent.click(await screen.findByRole('checkbox', { name: sections[0].title, exact: true }));
+  const sectionCheckbox = await screen.findByRole('checkbox', {
+    name: sections[0].title,
+    exact: true,
+  });
+  if (!sectionCheckbox.checked) fireEvent.click(sectionCheckbox);
   fireEvent.click(screen.getByRole('checkbox', { name: 'Enviar para leitura', exact: true }));
   fireEvent.click(screen.getByRole('checkbox', { name: 'Autorizar alteração', exact: true }));
   fireEvent.click(
@@ -291,7 +637,7 @@ test('evolução com IA exige prévia e consentimento; preserva edição manual 
   });
   fireEvent.click(await screen.findByRole('button', { name: 'Revisar proposta' }));
   const accept = await screen.findByRole('button', {
-    name: 'Aceitar proposta e criar revisão em rascunho',
+    name: 'Criar nova versão com este código',
   });
   expect(accept.disabled).toBe(true);
   expect(screen.getByLabelText('Conteúdo proposto').value).toBe('EDIÇÃO MANUAL A PRESERVAR');
@@ -300,10 +646,24 @@ test('evolução com IA exige prévia e consentimento; preserva edição manual 
     target: { value: 'export const frog = 2; // ajuste humano' },
   });
   fireEvent.click(accept);
-  await screen.findByRole('heading', { name: 'Arquivos da revisão 2' });
+  await screen.findByRole('heading', { name: 'Arquivos da versão 2' });
   expect(db.prepare('SELECT status FROM code_revisions WHERE number=2').get().status).toBe('draft');
   expect(codeService.revision(original.id).digest).toBe(original.digest);
   expect(providerCalls.generate).toBe(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Aprovar esta versão do código' }));
+  await screen.findByText('Código aprovado pela professora');
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar teste e captura' }));
+  const suggestions = (
+    await screen.findByRole('heading', { name: 'Seções sugeridas pela proposta de IA aceita' })
+  ).closest('div');
+  const suggestedButton = within(suggestions).getAllByRole('button')[0];
+  const suggestedSection = sections.find((s) => s.title === suggestedButton.textContent);
+  fireEvent.click(suggestedButton);
+  await waitFor(() =>
+    expect(screen.getByLabelText('Seção do guia').value).toBe(suggestedSection.id),
+  );
+  expect(screen.getByLabelText('Versão do guia').value).toBe(guide.id);
+  expect(db.prepare('SELECT count(*) n FROM code_guide_links').get().n).toBe(0);
 });
 
 test('referências são cadastradas sem leitura remota ou chamada de IA', async () => {

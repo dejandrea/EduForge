@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { InputField, ResourceState, useResource } from './Pedagogy';
 
@@ -14,6 +14,9 @@ export default function CodeFiles({ revision, onRevision, onDirty }) {
     references = useResource(`/code/revisions/${revision.id}/references`, referenceRevision);
   const diff = useResource(`/code/revisions/${revision.id}/diff`);
   const [comparison, setComparison] = useState(null);
+  useEffect(() => {
+    if (revision.number > 1 && diff.data?.changes.length) compare(diff.data.changes[0]);
+  }, [diff.data, revision.id]);
   async function open(file) {
     if (
       opened &&
@@ -93,7 +96,7 @@ export default function CodeFiles({ revision, onRevision, onDirty }) {
   }
   return (
     <section className="pedagogy-panel">
-      <h2>Arquivos da revisão {revision.number}</h2>
+      <h2>Arquivos da versão {revision.number}</h2>
       <p className="read-only">
         Visualização textual. Nenhum HTML, script ou dependência é executado. Edições são propostas
         salvas em outra revisão; a origem e revisões anteriores permanecem preservadas.
@@ -210,7 +213,7 @@ export default function CodeFiles({ revision, onRevision, onDirty }) {
               }}
             />
             <button className="primary" disabled={busy || !changes.length}>
-              Gravar nova revisão com as alterações adicionadas
+              Salvar nova versão com as alterações adicionadas
             </button>
             <p className="read-only">
               Somente as alterações adicionadas à proposta serão gravadas. O texto aberto no editor
@@ -219,7 +222,7 @@ export default function CodeFiles({ revision, onRevision, onDirty }) {
           </form>
         </div>
       </div>
-      <h3>Diferenças com a revisão anterior</h3>
+      <h3>Comparar com a versão anterior</h3>
       <ResourceState state={diff} />
       {diff.data?.changes.length === 0 && (
         <p>Nenhuma diferença: esta é a referência ou uma revisão sem mudanças de conteúdo.</p>
