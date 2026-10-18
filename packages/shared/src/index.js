@@ -36,3 +36,4 @@ export const lessonSchema = z
   .strict();
 export * from './code.js';
 export * from './code-ai.js';
+export * from './production.js';

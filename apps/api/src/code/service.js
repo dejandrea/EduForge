@@ -374,6 +374,12 @@ export function createCodeService(db, options = {}) {
       throw problem('Evidência pertence a outra revisão.');
     if (!data.file_path && !data.evidence_id)
       throw problem('Selecione um arquivo ou uma evidência.');
+    const existing = db
+      .prepare(
+        'SELECT k.* FROM code_guide_links k WHERE k.revision_id=? AND k.guide_id=? AND k.section_id=? AND k.step=? AND k.file_path IS ? AND k.evidence_id IS ? AND NOT EXISTS(SELECT 1 FROM code_guide_link_revocations v WHERE v.link_id=k.id)',
+      )
+      .get(id, data.guide_id, data.section_id, data.step, data.file_path, data.evidence_id);
+    if (existing) return existing;
     const row = { id: randomUUID(), revision_id: id, ...data, created_at: now() };
     db.prepare('INSERT INTO code_guide_links VALUES (?,?,?,?,?,?,?,?)').run(
       row.id,
@@ -448,7 +454,11 @@ export function createCodeService(db, options = {}) {
         .all(id)
         .map((r) => evidence(r.id)),
     guideLinks: (id) =>
-      db.prepare('SELECT * FROM code_guide_links WHERE revision_id=? ORDER BY created_at').all(id),
+      db
+        .prepare(
+          'SELECT k.* FROM code_guide_links k WHERE revision_id=? AND NOT EXISTS(SELECT 1 FROM code_guide_link_revocations v WHERE v.link_id=k.id) ORDER BY created_at',
+        )
+        .all(id),
     async close() {
       for (const { controller } of active.values()) controller.abort();
       await Promise.allSettled([...active.values()].map((a) => a.work));

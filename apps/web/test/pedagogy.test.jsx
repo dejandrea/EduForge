@@ -20,6 +20,7 @@ import LessonMaterials from '../src/pages/LessonMaterials';
 import ProjectReferences from '../src/pages/ProjectReferences';
 import ContextSelection, { emptySelection } from '../src/components/ContextSelection';
 import CodeWorkspace, { codeProgress } from '../src/pages/CodeWorkspace';
+import Production from '../src/pages/Production';
 
 // Load the server with Node so Vite does not bundle native SQLite for the DOM environment.
 const require = createRequire(import.meta.url);
@@ -55,6 +56,7 @@ function testPng() {
   ]);
 }
 beforeEach(async () => {
+  sessionStorage.clear();
   db = openDatabase(':memory:');
   providerCalls = { catalog: 0, generate: 0 };
   const provider = {
@@ -247,6 +249,331 @@ async function existingCode({ approved = false, withGuide = true } = {}) {
   const view = page(`/lessons/${lesson.id}/code`, '/lessons/:lessonId/code', <CodeWorkspace />);
   return { lesson, prep, revision, guide, view };
 }
+
+async function productionPilot() {
+  const f = await existingCode();
+  f.view.unmount();
+  let roadmap = await request(`/projects/${project.id}/roadmaps`, { title: 'Frogger Game' });
+  await fetch(`/api/roadmaps/${roadmap.id}/items`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      items: [{ number: f.lesson.number, title: f.lesson.title, objectives: f.lesson.objectives }],
+    }),
+  });
+  await request(`/roadmaps/${roadmap.id}/transition`, { status: 'in_review' });
+  roadmap = await request(`/roadmaps/${roadmap.id}/approve`, {
+    confirm: true,
+    expected_approved_id: f.guide.roadmap_version_id,
+  });
+  const items = roadmap.items;
+  await fetch(`/api/roadmap-items/${items[0].id}/link`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lesson_id: f.lesson.id }),
+  });
+  let guide = f.guide;
+  for (let i = 0; i < 2; i++)
+    guide = await request(`/lessons/${f.lesson.id}/guides`, {
+      template_version_id: guide.template_version_id,
+      roadmap_version_id: roadmap.id,
+      content: guide.data.content.map((s) => ({
+        ...s,
+        content:
+          s.section_id === 'steps'
+            ? '### Movimento\nMova o sapo.\n### Colisão\nConfira a colisão.'
+            : s.content,
+      })),
+    });
+  aiService.saveSettings({
+    ...aiService.settings(),
+    model: 'mock-education',
+    models: [
+      {
+        provider: 'openai',
+        id: 'mock-education',
+        label: 'Simulado',
+        structured_output: true,
+        max_output_tokens: 1000,
+        temperature: null,
+        input_per_million: 1,
+        output_per_million: 2,
+        cached_input_per_million: 0,
+        price_date: '2026-10-01',
+      },
+    ],
+  });
+  const selection = {
+    source_revision_id: f.revision.id,
+    guide_id: guide.id,
+    section_ids: ['steps'],
+    read_paths: ['src/game.js'],
+    permissions: [{ path: 'src/game.js', operations: ['modify'] }],
+    provider: 'openai',
+    model: 'mock-education',
+    instructions: '',
+  };
+  const quote = aiCodeService.estimate(f.lesson.id, selection);
+  aiCodeService.enqueue(f.lesson.id, {
+    ...selection,
+    confirm_external: true,
+    preview_digest: quote.preview_digest,
+    request_key: crypto.randomUUID(),
+  });
+  const job = await aiCodeService.processNext();
+  expect(job.status).toBe('completed');
+  const revision = (
+    await request(`/code/proposals/${job.result_proposal_id}/apply`, {
+      confirm: true,
+      summary: 'Movimento do sapo',
+      changes: [{ path: 'src/game.js', content: 'export const frog = 2;' }],
+      source_digest: f.revision.digest,
+      expected_latest_revision_id: f.revision.id,
+      allow_newer_revision: false,
+    })
+  ).revision;
+  await request(`/code/revisions/${revision.id}/review`, {
+    confirm: true,
+    digest: revision.digest,
+    decision: 'approved',
+  });
+  const manual = codeService.manual(revision.id, {
+    kind: 'manual',
+    description: 'Teste manual realizado pela professora no Code.org.',
+    result_text: 'Funcionou.',
+  });
+  const captures = [];
+  for (let i = 0; i < 5; i++)
+    captures.push(await codeService.capture(revision.id, testPng(), `Captura Frogger ${i + 1}`));
+  for (const step of ['Movimento', 'Colisão'])
+    codeService.link(revision.id, {
+      guide_id: guide.id,
+      section_id: 'steps',
+      step,
+      evidence_id: manual.id,
+      file_path: null,
+    });
+  return { ...f, guide, revision, manual, captures };
+}
+
+test('central Frogger mostra progresso real e organiza seis registros em lote sem duplicar', async () => {
+  const f = await productionPilot();
+  page('/production', '/production', <Production />);
+  await screen.findByText('Guia v3 · Rascunho');
+  expect(await screen.findByText('Código: versão 2 · Aprovado pela professora')).toBeTruthy();
+  expect(
+    screen.getByText(
+      'Você já tem 5 capturas e 1 teste(s) manual(is), em 6 evidências registradas.',
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText('Existem 5 evidências ainda não vinculadas ao guia selecionado.'),
+  ).toBeTruthy();
+  const organizer = (
+    await screen.findByRole('heading', { name: 'Organizar evidências por etapa do guia' })
+  ).closest('section');
+  expect(within(organizer).getAllByRole('img').length).toBe(5);
+  fireEvent.click(within(organizer).getByRole('button', { name: 'Selecionar todas' }));
+  expect(within(organizer).getByText('6 registros selecionados.')).toBeTruthy();
+  fireEvent.click(within(organizer).getByRole('button', { name: 'Passo a passo detalhado' }));
+  fireEvent.change(screen.getByLabelText('Etapa identificada no guia'), {
+    target: { value: 'Movimento' },
+  });
+  window.confirm.mockReturnValueOnce(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar vínculos selecionados' }));
+  expect(codeService.guideLinks(f.revision.id).length).toBe(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar vínculos selecionados' }));
+  await screen.findByText('5 vínculos criados; 1 já existiam. Nenhum registro foi duplicado.');
+  await screen.findByText('Existem 0 evidências ainda não vinculadas ao guia selecionado.');
+  expect(codeService.guideLinks(f.revision.id).length).toBe(7);
+  fireEvent.click(screen.getByRole('button', { name: 'Revisar guia', exact: true }));
+  expect(await screen.findByLabelText('Conteúdo: Cabeçalho')).toBeTruthy();
+  expect(providerCalls.generate).toBe(1);
+});
+
+test('central mantém guia e captura não salvos ao trocar aula e projeto', async () => {
+  const f = await productionPilot();
+  const second = await request(`/projects/${project.id}/lessons`, {
+    number: 4,
+    title: 'Outra aula',
+  });
+  const anotherProject = await request('/projects', { name: 'Outro projeto' });
+  await request(`/projects/${anotherProject.id}/lessons`, {
+    number: 1,
+    title: 'Aula de outro projeto',
+  });
+  page('/production', '/production', <Production />);
+  await screen.findByRole('option', { name: project.name });
+  fireEvent.change(screen.getByLabelText('Projeto para produção'), {
+    target: { value: project.id },
+  });
+  await screen.findByRole('option', { name: /Aula 3/ });
+  fireEvent.change(screen.getByLabelText('Aula para produção'), { target: { value: f.lesson.id } });
+  await screen.findByText('Guia v3 · Rascunho');
+  const image = new File([testPng()], 'draft.png', { type: 'image/png' });
+  fireEvent.change(await screen.findByLabelText('Captura PNG do teste (opcional)'), {
+    target: { files: [image] },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir Guia pedagógico' }));
+  fireEvent.change(await screen.findByLabelText('Conteúdo: Cabeçalho'), {
+    target: { value: 'RASCUNHO PRESERVADO NA CENTRAL' },
+  });
+  fireEvent.change(screen.getByLabelText('Aula para produção'), { target: { value: second.id } });
+  await screen.findByRole('heading', { name: 'Aula 4 · Outra aula' });
+  fireEvent.change(screen.getByLabelText('Projeto para produção'), {
+    target: { value: anotherProject.id },
+  });
+  await screen.findByRole('heading', { name: 'Aula 1 · Aula de outro projeto' });
+  fireEvent.change(screen.getByLabelText('Projeto para produção'), {
+    target: { value: project.id },
+  });
+  await screen.findByRole('option', { name: /Aula 3/ });
+  fireEvent.change(screen.getByLabelText('Aula para produção'), { target: { value: f.lesson.id } });
+  expect(screen.getByLabelText('Conteúdo: Cabeçalho').value).toBe('RASCUNHO PRESERVADO NA CENTRAL');
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir Testes e capturas' }));
+  expect(screen.getByLabelText('Captura PNG do teste (opcional)').files[0]).toBe(image);
+  expect((await request(`/guides/${f.guide.id}`)).data.content[0].content).not.toBe(
+    'RASCUNHO PRESERVADO NA CENTRAL',
+  );
+});
+
+test('central restaura seleção e progresso após remontar e preserva não aplicável', async () => {
+  const f = await productionPilot();
+  const view = page('/production', '/production', <Production />);
+  await screen.findByText('Guia v3 · Rascunho');
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir Código da aula' }));
+  fireEvent.click(await screen.findByText('Esta aula precisa de código?', { selector: 'summary' }));
+  fireEvent.change(screen.getByLabelText('Justificativa sobre a necessidade de código'), {
+    target: { value: 'Aula conceitual sem programação.' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar como não aplicável' }));
+  await waitFor(() =>
+    expect(
+      db
+        .prepare('SELECT requires_code FROM lesson_code_decisions WHERE lesson_id=?')
+        .get(f.lesson.id)?.requires_code,
+    ).toBe(0),
+  );
+  view.unmount();
+  page('/production', '/production', <Production />);
+  await screen.findByText('Guia v3 · Rascunho');
+  expect(screen.getAllByText('Não aplicável').length).toBe(2);
+  expect(screen.getByLabelText('Aula para produção').value).toBe(f.lesson.id);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir Documento final' }));
+  expect(await screen.findByText(/Nenhum DOCX foi criado/)).toBeTruthy();
+  expect(codeService.revision(f.revision.id).status).toBe('approved');
+});
+
+test('central permite etapa ambígua, distribui capturas e corrige vínculo com histórico', async () => {
+  const f = await productionPilot();
+  page('/production', '/production', <Production />);
+  await screen.findByText('Guia v3 · Rascunho');
+  const organizer = (
+    await screen.findByRole('heading', { name: 'Organizar evidências por etapa do guia' })
+  ).closest('section');
+  fireEvent.click(within(organizer).getByRole('button', { name: 'Cabeçalho', exact: true }));
+  expect(screen.getByText(/Este texto não tem marcadores confiáveis/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Selecionar ou nomear outra etapa' }));
+  fireEvent.change(screen.getByLabelText('Etapa confirmada pela professora'), {
+    target: { value: 'Conferência escolhida pela professora' },
+  });
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar: Captura Frogger 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar vínculos selecionados' }));
+  await screen.findByText('1 vínculos criados; 0 já existiam. Nenhum registro foi duplicado.');
+  await waitFor(() =>
+    expect(within(organizer).getAllByRole('button', { name: 'Corrigir vínculo' }).length).toBe(3),
+  );
+  vi.spyOn(window, 'prompt').mockReturnValue('Escolhi a seção incorreta.');
+  const captureArticle = screen
+    .getByRole('checkbox', { name: 'Selecionar: Captura Frogger 1' })
+    .closest('article');
+  fireEvent.click(within(captureArticle).getByRole('button', { name: 'Corrigir vínculo' }));
+  await screen.findByText(/Vínculo revogado com motivo no histórico/);
+  expect(db.prepare('SELECT reason FROM code_guide_link_revocations').get().reason).toBe(
+    'Escolhi a seção incorreta.',
+  );
+  expect(codeService.evidenceList(f.revision.id).length).toBe(6);
+});
+
+test('central usa gerador e aprovação de guia existentes sem navegação externa', async () => {
+  const f = await productionPilot();
+  page('/production', '/production', <Production />);
+  await screen.findByText('Guia v3 · Rascunho');
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir Guia pedagógico' }));
+  const field = await screen.findByLabelText('Conteúdo: Cabeçalho');
+  fireEvent.change(field, { target: { value: 'Guia editado na central.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar rascunho' }));
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Enviar para revisão' }).disabled).toBe(false),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Enviar para revisão' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Aprovar versão' }));
+  await waitFor(() =>
+    expect(db.prepare('SELECT status FROM lesson_versions WHERE id=?').get(f.guide.id).status).toBe(
+      'approved',
+    ),
+  );
+  expect(await screen.findByText('Guia v3 · Aprovado', { selector: 'p' })).toBeTruthy();
+  const aiForms = screen.getAllByText('Gerar guia com IA', { selector: 'summary' });
+  fireEvent.click(aiForms[0]);
+  expect(within(aiForms[0].closest('details')).getByLabelText('Modelo para IA')).toBeTruthy();
+  expect(providerCalls.generate).toBe(1);
+  const regenerate = (
+    await screen.findByText('Regenerar uma seção com IA', { selector: 'summary' })
+  ).closest('details');
+  fireEvent.click(
+    within(regenerate).getByText('Regenerar uma seção com IA', { selector: 'summary' }),
+  );
+  fireEvent.change(within(regenerate).getByLabelText('Seção a regenerar'), {
+    target: { value: 'header' },
+  });
+  fireEvent.click(
+    within(regenerate).getByRole('button', { name: 'Regenerar seção em nova versão' }),
+  );
+  await screen.findByText(/Tarefa solicitada/);
+  expect(providerCalls.generate).toBe(1);
+  await aiService.processNext();
+  await waitFor(
+    () =>
+      expect(screen.getByLabelText('Conteúdo: Cabeçalho').value).toBe('Guia gerado para revisão.'),
+    { timeout: 7000 },
+  );
+  expect(providerCalls.generate).toBe(2);
+});
+
+test('central informa erro de carregamento e oferece atualização sem calcular progresso falso', async () => {
+  const f = await productionPilot(),
+    realFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', (url, options) =>
+    String(url).includes('/production?')
+      ? Promise.resolve(
+          new Response(
+            JSON.stringify({ error: { message: 'Falha simulada ao carregar produção.' } }),
+            { status: 503, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      : realFetch(url, options),
+  );
+  page('/production', '/production', <Production />);
+  expect(await screen.findByRole('alert')).toHaveProperty(
+    'textContent',
+    'Falha simulada ao carregar produção.',
+  );
+  expect(screen.queryByText('Código: versão 2 · Aprovado pela professora')).toBe(null);
+  expect(providerCalls.generate).toBe(1);
+  vi.stubGlobal('fetch', realFetch);
+  const retry = screen.getByRole('button', { name: 'Tentar carregar novamente' });
+  retry.focus();
+  expect(document.activeElement).toBe(retry);
+  fireEvent.click(retry);
+  await screen.findByText('Código: versão 2 · Aprovado pela professora');
+  const collapse = await screen.findByRole('button', { name: 'Recolher Testes e capturas' });
+  expect(collapse.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(collapse);
+  expect(
+    screen.getByRole('button', { name: 'Abrir Testes e capturas' }).getAttribute('aria-expanded'),
+  ).toBe('false');
+});
 
 test('fase 3C abre versão aprovada existente e orienta registro sem nova geração ou aprovação', async () => {
   const { revision, guide } = await existingCode({ approved: true });

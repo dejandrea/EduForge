@@ -100,7 +100,7 @@ export function codeRouter(db, service) {
       db
         .prepare(
           `SELECT k.*,r.number revision_number,r.digest,p.commit_sha,p.lesson_id,e.kind evidence_kind,e.status evidence_status,e.description evidence_description,e.origin evidence_origin,e.result evidence_result
-      FROM code_guide_links k JOIN code_revisions r ON r.id=k.revision_id JOIN code_preparations p ON p.id=r.preparation_id LEFT JOIN code_evidence e ON e.id=k.evidence_id WHERE k.guide_id=? ORDER BY k.created_at`,
+      FROM code_guide_links k JOIN code_revisions r ON r.id=k.revision_id JOIN code_preparations p ON p.id=r.preparation_id LEFT JOIN code_evidence e ON e.id=k.evidence_id WHERE k.guide_id=? AND NOT EXISTS(SELECT 1 FROM code_guide_link_revocations v WHERE v.link_id=k.id) ORDER BY k.created_at`,
         )
         .all(req.params.id),
     );

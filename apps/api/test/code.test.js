@@ -457,7 +457,7 @@ test('evidências ligam-se somente a revisão/aula/seção corretas; guia aprova
     reopened.prepare('SELECT revision_id FROM code_guide_links').get().revision_id,
     rev.id,
   );
-  assert.equal(reopened.prepare('SELECT count(*) n FROM migrations').get().n, 7);
+  assert.equal(reopened.prepare('SELECT count(*) n FROM migrations').get().n, 8);
   reopened.close();
 });
 

@@ -10,7 +10,7 @@ export const evidenceKinds = {
   capture: 'Captura de tela',
   manual: 'Evidência manual',
 };
-export default function CodeEvidence({ revision, onChange }) {
+export default function CodeEvidence({ revision, onChange, compact = false }) {
   const [refresh, setRefresh] = useState(0),
     state = useResource(`/code/revisions/${revision.id}/evidence`, refresh),
     [description, setDescription] = useState(''),
@@ -95,59 +95,62 @@ export default function CodeEvidence({ revision, onChange }) {
       {!state.loading && state.data?.length === 0 && (
         <p>Nenhuma evidência registrada nesta revisão.</p>
       )}
-      {state.data?.map((row) => (
-        <article key={row.id} className="code-evidence">
-          <h3>{evidenceKinds[row.kind]}</h3>
-          <p className="badge">
-            {row.status === 'pending'
-              ? 'Aguardando revisão'
-              : row.status === 'approved'
-                ? 'Aprovada pela professora'
-                : 'Rejeitada'}{' '}
-            · {row.origin === 'manual' ? 'origem manual' : 'observação automatizada'} ·{' '}
-            {row.result === 'reported'
-              ? 'resultado relatado'
-              : row.result === 'observed'
-                ? 'observação estática'
-                : row.result}
-          </p>
-          <p>{row.description}</p>
-          <small>
-            {new Date(row.created_at).toLocaleString('pt-BR')} · revisão {revision.number}
-          </small>
-          {row.asset_hash && (
-            <a href={`/api/code/evidence/${row.id}/asset`} target="_blank" rel="noreferrer">
-              <img
-                className="code-capture"
-                src={`/api/code/evidence/${row.id}/asset`}
-                alt={row.description}
-              />
-            </a>
-          )}
-          <details>
-            <summary>Consultar resultado e procedência</summary>
-            <pre className="code-preview">{JSON.stringify(row.data, null, 2)}</pre>
-          </details>
-          {row.status === 'pending' && (
-            <div className="actions">
-              {!['test', 'build'].includes(row.kind) && (
-                <button disabled={busy} onClick={() => review(row, 'approved')}>
-                  Aprovar registro
+      <details open={!compact}>
+        <summary>Revisar registros existentes e sua procedência</summary>
+        {state.data?.map((row) => (
+          <article key={row.id} className="code-evidence">
+            <h3>{evidenceKinds[row.kind]}</h3>
+            <p className="badge">
+              {row.status === 'pending'
+                ? 'Aguardando revisão'
+                : row.status === 'approved'
+                  ? 'Aprovada pela professora'
+                  : 'Rejeitada'}{' '}
+              · {row.origin === 'manual' ? 'origem manual' : 'observação automatizada'} ·{' '}
+              {row.result === 'reported'
+                ? 'resultado relatado'
+                : row.result === 'observed'
+                  ? 'observação estática'
+                  : row.result}
+            </p>
+            <p>{row.description}</p>
+            <small>
+              {new Date(row.created_at).toLocaleString('pt-BR')} · revisão {revision.number}
+            </small>
+            {row.asset_hash && (
+              <a href={`/api/code/evidence/${row.id}/asset`} target="_blank" rel="noreferrer">
+                <img
+                  className="code-capture"
+                  src={`/api/code/evidence/${row.id}/asset`}
+                  alt={row.description}
+                />
+              </a>
+            )}
+            <details>
+              <summary>Consultar resultado e procedência</summary>
+              <pre className="code-preview">{JSON.stringify(row.data, null, 2)}</pre>
+            </details>
+            {row.status === 'pending' && (
+              <div className="actions">
+                {!['test', 'build'].includes(row.kind) && (
+                  <button disabled={busy} onClick={() => review(row, 'approved')}>
+                    Aprovar registro
+                  </button>
+                )}
+                <button disabled={busy} onClick={() => review(row, 'rejected')}>
+                  Rejeitar registro
                 </button>
-              )}
-              <button disabled={busy} onClick={() => review(row, 'rejected')}>
-                Rejeitar registro
-              </button>
-              {['test', 'build'].includes(row.kind) && (
-                <p>
-                  Relato externo preservado. Sem execução isolada comprovada, ele não pode receber
-                  aprovação de teste/build pelo EduForge.
-                </p>
-              )}
-            </div>
-          )}
-        </article>
-      ))}
+                {['test', 'build'].includes(row.kind) && (
+                  <p>
+                    Relato externo preservado. Sem execução isolada comprovada, ele não pode receber
+                    aprovação de teste/build pelo EduForge.
+                  </p>
+                )}
+              </div>
+            )}
+          </article>
+        ))}
+      </details>
       <details>
         <summary>Outros registros e envio avulso de captura</summary>
         <div className="code-form-grid">

@@ -609,8 +609,9 @@ function MemoryPanel({ lessonId, refreshKey }) {
     </section>
   );
 }
-export default function LessonMaterials() {
-  const { lessonId } = useParams(),
+export default function LessonMaterials({ lessonId: suppliedId }) {
+  const params = useParams(),
+    lessonId = suppliedId || params.lessonId,
     [revision, setRevision] = useState(0),
     [materialRevision, setMaterialRevision] = useState(0),
     lesson = useResource(`/lessons/${lessonId}`, revision),

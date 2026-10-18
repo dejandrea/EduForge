@@ -51,6 +51,16 @@ Para código já aprovado, a ação recomendada é **Registrar teste e captura**
 
 Detalhes e verificação: [Relatório da Fase 3C](docs/PHASE_3C_REPORT.md).
 
+## Central de Produção de Conteúdo — Fase 3D
+
+Abra **Produção de Conteúdo** no menu lateral (`/production`), selecione projeto e aula e acompanhe as cinco etapas: planejamento, guia, código, testes/capturas e documento final. A central reutiliza os editores, geradores, aprovações e materiais existentes; as rotas administrativas continuam disponíveis.
+
+A próxima ação e o progresso são calculados dos registros salvos. Quando houver cinco capturas e um teste já registrados, a central mostra esses seis registros e recomenda organizar os vínculos pendentes, contando evidências distintas na versão exata do guia. Projeto/aula selecionados são lembrados durante a sessão. Trocar de aula, projeto ou etapa mantém formulários ainda não salvos enquanto a central permanece aberta; recarregar a página recupera os dados já gravados, não os rascunhos locais.
+
+Na galeria, selecione uma ou várias evidências, consulte a seção do guia, escolha uma etapa identificada por marcadores ou confirme um nome quando o texto for livre. **Confirmar vínculos selecionados** grava o lote em uma única transação. É possível distribuir registros entre etapas, consultar vínculos pendentes e corrigir um vínculo com motivo preservado no histórico. Os registros ficam em uma coluna, com mais largura para ler as etapas do guia; em telas pequenas os painéis se empilham.
+
+Aulas sem programação podem registrar **não aplicável** com justificativa persistida. Isso não aprova nem remove código existente. A etapa Documento final apenas consulta os materiais e pendências: **DOCX ainda não é exportado**. Ver [relatório da Fase 3D](docs/PHASE_3D_REPORT.md).
+
 ## Dados e verificação
 
 Migrations são incrementais ao iniciar a aplicação; não apague o banco para atualizar. Para backup, encerre o EduForge e copie juntos o banco `storage/eduforge.db` e as pastas `storage/materials` e `storage/code`. Arquivos locais e credenciais ficam fora do Git.

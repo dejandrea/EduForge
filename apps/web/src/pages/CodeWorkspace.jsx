@@ -78,7 +78,7 @@ export function codeProgress(revision, evidence, links, jobs) {
   };
 }
 
-function Preparation({ id, lessonId, area, navigate }) {
+function Preparation({ id, lessonId, area, navigate, onSelection }) {
   const [refresh, setRefresh] = useState(0),
     state = useResource(`/code/preparations/${id}`, refresh);
   const [cachedPrep, setCachedPrep] = useState(null);
@@ -105,6 +105,9 @@ function Preparation({ id, lessonId, area, navigate }) {
     evidenceRefresh,
   );
   const jobs = useResource(`/code/preparations/${id}/ai-jobs`, aiRefresh);
+  useEffect(() => {
+    if (revision) onSelection?.(revision.id);
+  }, [revision?.id, onSelection]);
   useEffect(() => {
     if (!['pending', 'running'].includes(prep?.status)) return;
     const timer = setTimeout(() => setRefresh((n) => n + 1), 1500);
@@ -391,11 +394,11 @@ function Preparation({ id, lessonId, area, navigate }) {
   );
 }
 
-function CodeWorkspaceView({ lessonId }) {
+function CodeWorkspaceView({ lessonId, embedded, onSelection }) {
   const lesson = useResource(`/lessons/${lessonId}`),
     references = useResource(lesson.data ? `/projects/${lesson.data.project_id}/references` : null),
     capabilities = useResource('/code/capabilities');
-  const [area, setArea] = useState('overview'),
+  const [area, setArea] = useState(embedded ? 'code' : 'overview'),
     [reference, setReference] = useState(''),
     [branch, setBranch] = useState('main'),
     [objective, setObjective] = useState(''),
@@ -460,10 +463,10 @@ function CodeWorkspaceView({ lessonId }) {
         {Object.entries(areas).map(([key, label], i) => (
           <button
             key={key}
-            id={`code-tab-${key}`}
+            id={`code-tab-${lessonId}-${key}`}
             role="tab"
             aria-selected={area === key}
-            aria-controls="code-workspace-panel"
+            aria-controls={`code-workspace-panel-${lessonId}`}
             tabIndex={area === key ? 0 : -1}
             onClick={() => setArea(key)}
             onKeyDown={(e) => {
@@ -476,7 +479,7 @@ function CodeWorkspaceView({ lessonId }) {
               if (target) {
                 e.preventDefault();
                 setArea(target);
-                document.getElementById(`code-tab-${target}`)?.focus();
+                document.getElementById(`code-tab-${lessonId}-${target}`)?.focus();
               }
             }}
           >
@@ -485,9 +488,9 @@ function CodeWorkspaceView({ lessonId }) {
         ))}
       </div>
       <div
-        id="code-workspace-panel"
+        id={`code-workspace-panel-${lessonId}`}
         role="tabpanel"
-        aria-labelledby={`code-tab-${area}`}
+        aria-labelledby={`code-tab-${lessonId}-${area}`}
         tabIndex={0}
       >
         <ResourceState state={preparations} />
@@ -583,7 +586,13 @@ function CodeWorkspaceView({ lessonId }) {
         </div>
         {visited.map((id) => (
           <div hidden={selected !== id} key={id}>
-            <Preparation id={id} lessonId={lessonId} area={area} navigate={setArea} />
+            <Preparation
+              id={id}
+              lessonId={lessonId}
+              area={area}
+              navigate={setArea}
+              onSelection={selected === id ? onSelection : undefined}
+            />
           </div>
         ))}
         <div hidden={area !== 'history'}>
@@ -611,7 +620,15 @@ function CodeWorkspaceView({ lessonId }) {
   );
 }
 
-export default function CodeWorkspace() {
-  const { lessonId } = useParams();
-  return <CodeWorkspaceView key={lessonId} lessonId={lessonId} />;
+export default function CodeWorkspace({ lessonId: suppliedId, embedded = false, onSelection }) {
+  const params = useParams(),
+    lessonId = suppliedId || params.lessonId;
+  return (
+    <CodeWorkspaceView
+      key={lessonId}
+      lessonId={lessonId}
+      embedded={embedded}
+      onSelection={onSelection}
+    />
+  );
 }

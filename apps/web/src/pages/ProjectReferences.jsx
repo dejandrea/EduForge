@@ -4,8 +4,9 @@ import { api } from '../api';
 import { InputField, ResourceState, useResource } from '../components/Pedagogy';
 import './Materials.css';
 
-export default function ProjectReferences() {
-  const { id } = useParams(),
+export default function ProjectReferences({ projectId }) {
+  const params = useParams(),
+    id = projectId || params.id,
     [revision, setRevision] = useState(0),
     state = useResource(`/projects/${id}/references`, revision),
     snapshots = useResource(`/projects/${id}/github-snapshots`, revision);

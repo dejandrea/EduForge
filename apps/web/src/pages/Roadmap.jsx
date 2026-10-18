@@ -326,14 +326,17 @@ function RoadmapEditor({ row, refresh, onDirty, dirty, projectId }) {
     </>
   );
 }
-export default function Roadmap() {
-  const { id } = useParams();
+export default function Roadmap({ projectId, embedded = false }) {
+  const params = useParams();
+  const id = projectId || params.id;
   const project = useResource(`/projects/${id}`);
   return (
     <>
-      <Link className="back" to={`/projects/${id}`}>
-        ← Voltar ao projeto
-      </Link>
+      {!embedded && (
+        <Link className="back" to={`/projects/${id}`}>
+          ← Voltar ao projeto
+        </Link>
+      )}
       <div className="page-heading">
         <div>
           <span className="eyebrow">PLANEJAMENTO PEDAGÓGICO</span>

@@ -214,6 +214,7 @@ export function VersionWorkspace({
   refreshKey = 0,
   disabled = false,
   onDirtyChange,
+  onSelectedChange,
 }) {
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState('');
@@ -226,6 +227,9 @@ export function VersionWorkspace({
   const list = useResource(collection, `${revision}:${refreshKey}`);
   const selectedId =
     selected && list.data?.some((v) => v.id === selected) ? selected : list.data?.[0]?.id;
+  useEffect(() => {
+    if (selectedId) onSelectedChange?.(selectedId);
+  }, [selectedId, onSelectedChange]);
   const detail = useResource(selectedId ? `/${kind}/${selectedId}` : null, revision);
   const row = detail.data;
   const refresh = () => {

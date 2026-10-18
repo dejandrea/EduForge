@@ -30,6 +30,10 @@ Implementada: seleção de guia/seções e arquivos com permissões explícitas;
 
 Implementada a organização em Visão geral, Código, Evidências e Histórico, com próxima ação derivada dos registros existentes, seleção de código já preparado e versão mais recente, formulário de teste manual com captura opcional e sugestões confirmadas de vínculo ao guia. Formulários preservados entre abas, navegação por teclado e detalhes técnicos secundários. Serviços, migrations e contratos de API preservados. Inspeção visual assistida com a professora pendente; ver `PHASE_3C_REPORT.md`.
 
+## Fase 3D — Central de Produção de Conteúdo
+
+Implementada a central `/production`, com projeto/aula, linha do tempo e próxima ação derivadas de dados existentes. Reutiliza planejamento, guias, código, geração de IA e testes; acrescenta organização de evidências por etapas reais do guia, seleção múltipla e vínculos transacionais em lote, prevenção de duplicatas e revogação auditada. Código não aplicável é uma decisão persistida com justificativa. Prévia dos materiais finais sem gerar DOCX. Galeria em uma coluna e guia com área ampliada. Validação automatizada e pendências de inspeção visual descritas em `PHASE_3D_REPORT.md`.
+
 ## Fase 4 — Documentos
 
 Worker Python com python-docx, templates, imagens vinculadas e revisão visual dos documentos exportados.

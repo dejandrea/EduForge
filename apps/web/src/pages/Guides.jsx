@@ -210,8 +210,9 @@ function GuideCreation({ lesson, revision, onCreated }) {
     </details>
   );
 }
-export default function Guides() {
-  const { lessonId } = useParams();
+export default function Guides({ lessonId: suppliedId, embedded = false, onSelection }) {
+  const params = useParams();
+  const lessonId = suppliedId || params.lessonId;
   const lesson = useResource(`/lessons/${lessonId}`);
   const [revision, setRevision] = useState(0);
   const [jobsRevision, setJobsRevision] = useState(0);
@@ -223,9 +224,11 @@ export default function Guides() {
       <ResourceState state={lesson} />
       {lesson.data && (
         <>
-          <Link className="back" to={`/projects/${lesson.data.project_id}`}>
-            ← Voltar ao projeto
-          </Link>
+          {!embedded && (
+            <Link className="back" to={`/projects/${lesson.data.project_id}`}>
+              ← Voltar ao projeto
+            </Link>
+          )}
           <div className="page-heading">
             <div>
               <span className="eyebrow">GUIA PEDAGÓGICO</span>
@@ -282,6 +285,7 @@ export default function Guides() {
             collection={`/lessons/${lessonId}/guides`}
             createBody={null}
             onDirtyChange={setEditorDirty}
+            onSelectedChange={onSelection}
           >
             {(props) => (
               <GuideEditor

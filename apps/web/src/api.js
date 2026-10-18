@@ -6,7 +6,14 @@ export async function api(path, options = {}) {
       ...options.headers,
     },
   });
-  if (response.status === 204) return null;
+  const notify = () => {
+    if (options.method && !['GET', 'HEAD'].includes(options.method.toUpperCase()))
+      window.dispatchEvent(new CustomEvent('eduforge:mutation', { detail: { path } }));
+  };
+  if (response.status === 204) {
+    notify();
+    return null;
+  }
   const body = await response.json();
   if (!response.ok)
     throw new Error(
@@ -14,5 +21,6 @@ export async function api(path, options = {}) {
         .filter(Boolean)
         .join(' '),
     );
+  notify();
   return body;
 }
